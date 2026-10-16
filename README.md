@@ -15,6 +15,8 @@
 
 ## Linux / Docker
 
+只想在 Windows Codex 桌面版测试现有号池的搭档，请看[Windows 测试接入](docs/windows-partner.md)。无需在 Windows 部署下面的服务器组件；专属测试包由运营者私发，仓库不含真实测试 Key。
+
 ```bash
 python3 scripts/init_env.py --admin-email YOUR_ADMIN_EMAIL
 # 如已存在 .env，脚本拒绝覆盖；在本地安全编辑。
