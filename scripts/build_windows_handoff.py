@@ -29,7 +29,7 @@ intro=f'''Windows Codex 桌面版测试（含专属临时 Key，只发给测试�
 
 测试地址：{url}
 有效期至：{expiry}（多伦多时间）。并发 1，每分钟 6 次，内部测试额度 1 单位；这不是官方 API 充值金额。额度不足时联系我。
-这是本机试用服务，服务方 Mac 需要保持运行。免费隧道地址可能变更或提前断开；连接失败请联系我获取新配置。尚需你在 Windows 桌面版完成实际验证。
+这是本机试用服务，服务方 Mac 需要保持运行。本次修复包使用固定主机名的公网入口，替换已失效的 lhr.life 临时地址；无需安装 Tailscale。尚需你在 Windows 桌面版完成实际验证。
 
 恢复原线路：退出 Codex，将脚本打印的 config.toml.before-tokenbots-时间 文件复制回同目录 config.toml，再打开软件。若期间另有配置修改，先另存当前配置。
 
@@ -55,7 +55,7 @@ readme=f'''这是给 Windows Codex 桌面版使用的测试包，不需要部署
 
 本包已经填写测试地址和临时 Key，不需要你寻找或填写任何账号密码。
 只给本次测试搭档使用，不要上传 GitHub 或转发到群里。
-有效期至 {expiry}（多伦多时间）。服务器运行在我们的 Mac，需要保持在线；地址可能提前失效。
+有效期至 {expiry}（多伦多时间）。服务器运行在我们的 Mac，需要保持在线。本修复包已替换失效的 lhr.life 地址；旧包不要再用。已配置过旧线路的电脑也可以运行此包更新地址。
 并发 1，每分钟 6 次，测试模型 gpt-6.1-sol；使用 medium 并关闭 Fast 模式。
 
 恢复原配置：退出 Codex，把窗口显示的 config.toml.before-tokenbots-时间 文件复制为同目录的 config.toml，然后重新打开。
@@ -72,7 +72,7 @@ if errorlevel 1 (
 )
 pause
 '''
-package=folder/'TokenBots-Windows-Test.zip'
+package=folder/'TokenBots-Windows-Fix2.zip'
 with zipfile.ZipFile(package,'w',zipfile.ZIP_DEFLATED) as z:
     z.writestr('TokenBots-Windows-Test/README.txt',readme.encode('utf-8-sig'))
     z.writestr('TokenBots-Windows-Test/setup.ps1',script.encode('utf-8-sig'))

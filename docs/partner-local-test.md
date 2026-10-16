@@ -12,7 +12,7 @@
 
 ## 网络选择
 
-本次搭档使用 Windows Codex 桌面版，不安装 Tailscale。曾配置的 Funnel 443 因公共 DNS 未生效而撤回，保留原有无关的私有 Serve 8443。改用 localhost.run 免费 HTTPS 隧道，TLS 在该服务终止，SSH 加密传输到本机 API 桥。只传专属测试 Key 和测试模型请求，不转发订阅凭据或管理接口。免费域名可能变化或提前中断，不作为生产稳定地址。
+2026-10-16 修复：localhost.run 在同一 SSH 会话内多次重新分配域名，随后进程退出，旧地址返回 502。本机 API 桥仍返回 200。Funnel 公共 DNS 现已由两个公共解析器确认生效，改为固定主机名的 Funnel 443 → 127.0.0.1:8181，保留无关的私有 Serve 8443。搭档仍无需安装 Tailscale。强制通过两个公共 relay IP（保留 TLS 主机名验证）分别验证模型列表 200、无凭据 401、管理路径 404；压缩 Responses 请求返回 200、FIXED_OK 和 response.completed，记录在 reports/partner-funnel-repair.json。
 
 ## 启动与撤销
 
@@ -26,7 +26,7 @@ python -m uvicorn tokenbot.partner_gateway:app_factory --factory --host 127.0.0.
 
 测试结束停止入口，并在本机后台停用测试 Key 和测试用户。若撤销分组绑定，按私有 provision 记录恢复原分组，不删除订阅账号。不要重复执行准备脚本创建额外测试用户。
 
-本次使用 `scripts/run_partner_gateway.py` 和 `scripts/run_partner_tunnel.py` 托管两个进程，到测试 Key 期限停止。隧道不自动重连；若手动重启造成地址变更，重新运行 `scripts/build_windows_handoff.py` 生成文件，不能转发旧地址。临时地址与 PID 存在 `.runtime/partner-tunnel.json`。可向这两个 runner 的 PID 发送 SIGTERM 结束本次测试；不要全局重置 Tailscale 设置。
+当前由 run_partner_gateway.py 管理 API 桥，到 Key 期限停止并清理仅指向该桥的 Funnel 443。Funnel 使用 Tailscale 后台服务，不再运行 run_partner_tunnel.py 的免费 SSH 隧道。caffeinate -i -w 绑定网关 PID，测试期间阻止空闲休眠，网关退出后解除。地址与网关 PID 存在 .runtime/partner-tunnel.json；不要全局重置 Tailscale 设置。
 
 Windows 配置模板会先验证模型入口，备份既有 `config.toml`，保留其他设置并切换到专属 Responses provider。配置副本在 `delivery/`，包含短期测试密钥，已忽略且仅本机用户可读。模板使用临时明文 bearer token，测试完恢复备份并停用 Key。只验证了当前本机 Codex CLI 对相关 provider 字段的解析，尚未在 Windows 执行 PowerShell 或验证桌面端完整工具调用；由搭档按交付文件执行人工验收。
 

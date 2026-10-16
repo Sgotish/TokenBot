@@ -9,11 +9,26 @@ $tbDir = if ($env:CODEX_HOME) { $env:CODEX_HOME } else { Join-Path $env:USERPROF
 New-Item -ItemType Directory -Path $tbDir -Force | Out-Null
 $tbPath = Join-Path $tbDir 'config.toml'
 $tbOld = if (Test-Path $tbPath) { [IO.File]::ReadAllText($tbPath) } else { '' }
-if ($tbOld.Contains('tokenbots_partner_20261016')) { throw 'This test provider is already configured. Do not run twice.' }
 if ($tbOld.Contains('"""') -or $tbOld.Contains("'''")) { throw 'Multiline TOML found. Ask us to merge manually; nothing was changed.' }
 if ($tbOld -match '(?m)^\s*model_providers\s*=') { throw 'Inline provider configuration found. Ask us to merge manually.' }
 $tbBackup = $tbPath + '.before-tokenbots-' + (Get-Date -Format 'yyyyMMdd-HHmmss')
 if (Test-Path $tbPath) { Copy-Item -LiteralPath $tbPath -Destination $tbBackup }
+if ($tbOld.Contains('tokenbots_partner_20261016')) {
+    $tbPattern = '(?ms)^\[model_providers\.tokenbots_partner_20261016\][ \t]*\r?\n(?:(?!^[ \t]*\[).)*'
+    $tbMatches = [regex]::Matches($tbOld, $tbPattern)
+    if ($tbMatches.Count -ne 1) { throw 'Existing test configuration is ambiguous; nothing was changed.' }
+    $tbBlock = $tbMatches[0].Value
+    foreach ($tbField in @('base_url','experimental_bearer_token')) {
+        if ([regex]::Matches($tbBlock, ('(?m)^' + $tbField + '\s*=')).Count -ne 1) { throw 'Existing test fields are ambiguous; nothing was changed.' }
+    }
+    $tbBlock = [regex]::Replace($tbBlock, '(?m)^base_url\s*=[^\r\n]*', ('base_url = "' + $tbUrl + '"'))
+    $tbBlock = [regex]::Replace($tbBlock, '(?m)^experimental_bearer_token\s*=[^\r\n]*', ('experimental_bearer_token = "' + $tbKey + '"'))
+    $tbFixed = $tbOld.Substring(0,$tbMatches[0].Index) + $tbBlock + $tbOld.Substring($tbMatches[0].Index + $tbMatches[0].Length)
+    [IO.File]::WriteAllText($tbPath, $tbFixed, (New-Object Text.UTF8Encoding($false)))
+    Write-Host 'Configured: test endpoint repaired. Restart Codex and start a NEW LOCAL chat.'
+    Write-Host ('Original configuration backup: ' + $tbBackup)
+    return
+}
 $tbSection = [regex]::Match($tbOld, '(?m)^[ \t]*\[')
 $tbRoot = if ($tbSection.Success) { $tbOld.Substring(0,$tbSection.Index) } else { $tbOld }
 $tbRest = if ($tbSection.Success) { $tbOld.Substring($tbSection.Index) } else { '' }
