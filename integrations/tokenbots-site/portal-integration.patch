@@ -1,0 +1,286 @@
+diff --git a/app/main.py b/app/main.py
+index dd1be63..7a1dd32 100644
+--- a/app/main.py
++++ b/app/main.py
+@@ -75,6 +75,8 @@ def create_app(settings=None, transport=None):
+                 if app.state.portal: await run_in_threadpool(app.state.portal.close)
+ 
+     app = FastAPI(debug=False, docs_url=None, redoc_url=None, openapi_url=None, lifespan=lifespan)
++    from .pilot_bridge import mount_pilot
++    mount_pilot(app, settings)
+     from .gateway import Gateway
+     gateway = Gateway(settings)
+     limiter = RateLimiter(settings.rate_limit, settings.rate_window)
+diff --git a/app/pilot_bridge.py b/app/pilot_bridge.py
+new file mode 100644
+index 0000000..c84c09e
+--- /dev/null
++++ b/app/pilot_bridge.py
+@@ -0,0 +1,136 @@
++"""Short-lived, owner-only smoke-test queue. No production model routing changes."""
++import asyncio
++import hmac
++import json
++import os
++import secrets
++import time
++from pathlib import Path
++
++from fastapi import Request
++from fastapi.responses import FileResponse, JSONResponse
++from starlette.concurrency import run_in_threadpool
++
++from .portal_store import PortalError
++
++
++def mount_pilot(app, settings):
++    jobs = {}
++    guard = asyncio.Lock()
++    heartbeat = 0.0
++    last_run = 0.0
++
++    def enabled():
++        try:
++            return (len(os.getenv('PILOT_WORKER_TOKEN', '')) >= 40
++                    and bool(os.getenv('PILOT_ADMIN_USER_ID'))
++                    and time.time() < float(os.getenv('PILOT_EXPIRES_AT', '0')))
++        except ValueError:
++            return False
++
++    async def owner(request):
++        store = request.app.state.portal
++        if store is None:
++            raise PortalError('请先登录管理员账号。', 401)
++        actor = await run_in_threadpool(store.session, request.cookies.get('tb_session', ''))
++        if actor['role'] != 'admin' or actor['id'] != os.getenv('PILOT_ADMIN_USER_ID'):
++            raise PortalError('此测试仅向指定管理员开放。', 403)
++        return actor
++
++    async def body(request):
++        if request.headers.get('content-type', '').split(';')[0] != 'application/json':
++            raise PortalError('需要 JSON 请求。', 415)
++        result = bytearray()
++        async with asyncio.timeout(5):
++            async for chunk in request.stream():
++                result.extend(chunk)
++                if len(result) > 8192:
++                    raise PortalError('请求过大。', 413)
++        value = json.loads(result)
++        if not isinstance(value, dict):
++            raise ValueError()
++        return value
++
++    def expire():
++        now = time.time()
++        for job in jobs.values():
++            if job['status'] in ('queued', 'running') and now - job['created_at'] > 180:
++                job.update(status='unknown', output='等待超时；结果未知，不会自动重发。')
++        for jid in list(jobs):
++            if now - jobs[jid]['created_at'] > 3600:
++                del jobs[jid]
++
++    @app.get('/admin/subscription-test')
++    async def page(request: Request):
++        try:
++            await owner(request)
++        except PortalError as exc:
++            return JSONResponse({'error': exc.message}, status_code=exc.status)
++        return FileResponse(Path(__file__).parent / 'static' / 'subscription-test.html')
++
++    @app.api_route('/api/pilot/{action:path}', methods=['GET', 'POST'])
++    async def api(action: str, request: Request):
++        nonlocal heartbeat, last_run
++        try:
++            if not enabled():
++                raise PortalError('测试入口未启用或已到期。', 503)
++            if request.query_params:
++                raise PortalError('不接受网址参数。', 400)
++            worker = action.startswith('worker/')
++            if worker:
++                if request.method != 'POST' or not hmac.compare_digest(
++                        request.headers.get('authorization', ''),
++                        'Bearer ' + os.environ['PILOT_WORKER_TOKEN']):
++                    raise PortalError('未授权。', 401)
++            else:
++                actor = await owner(request)
++                if request.method == 'POST':
++                    origin = settings.public_origin or str(request.base_url).rstrip('/')
++                    if request.headers.get('origin') != origin or request.headers.get('sec-fetch-site') == 'cross-site':
++                        raise PortalError('请从本站提交。', 403)
++                    if not hmac.compare_digest(request.headers.get('x-csrf-token', ''), actor['csrf']):
++                        raise PortalError('验证失败，请重新登录。', 403)
++            data = await body(request) if request.method == 'POST' else {}
++            async with guard:
++                expire()
++                if action == 'status' and request.method == 'GET':
++                    return {'connected': time.time() - heartbeat < 15,
++                            'jobs': list(jobs.values())[-10:], 'model': 'gpt-6.1-sol'}
++                if action == 'run' and request.method == 'POST':
++                    if set(data) != {'target'} or data['target'] not in ('pro', 'plus'):
++                        raise PortalError('仅支持 Pro / Plus 固定短消息测试。', 400)
++                    if time.time() - heartbeat >= 15:
++                        raise PortalError('本机测试程序未连接。', 503)
++                    if time.time() - last_run < 10 or any(j['status'] in ('queued', 'running') for j in jobs.values()):
++                        raise PortalError('已有测试或操作太快，请等待。', 429)
++                    if len(jobs) >= 20:
++                        raise PortalError('本次试验已达请求上限。', 429)
++                    jid = secrets.token_hex(16)
++                    jobs[jid] = {'id': jid, 'target': data['target'], 'status': 'queued',
++                                 'created_at': time.time(), 'model': 'gpt-6.1-sol', 'output': ''}
++                    last_run = time.time()
++                    return jobs[jid]
++                if action == 'worker/claim':
++                    heartbeat = time.time()
++                    for job in jobs.values():
++                        if job['status'] == 'queued':
++                            job['status'] = 'running'
++                            return {'job': dict(job)}
++                    return {'job': None}
++                if action == 'worker/result':
++                    if set(data) != {'id', 'status', 'output'} or data['status'] not in ('completed', 'failed', 'unknown'):
++                        raise ValueError()
++                    if not isinstance(data['output'], str) or len(data['output']) > 2000:
++                        raise ValueError()
++                    job = jobs.get(data['id'])
++                    if job is None:
++                        raise PortalError('测试不存在或服务已重启。', 404)
++                    if job['status'] not in ('running', 'unknown'):
++                        raise PortalError('结果已记录。', 409)
++                    job.update(status=data['status'], output=data['output'])
++                    return {'ok': True}
++                raise PortalError('接口不存在。', 404)
++        except PortalError as exc:
++            return JSONResponse({'error': exc.message}, status_code=exc.status)
++        except (ValueError, TypeError, KeyError, TimeoutError, UnicodeError):
++            return JSONResponse({'error': '请求无效或超时。'}, status_code=400)
+diff --git a/app/static/subscription-test.css b/app/static/subscription-test.css
+new file mode 100644
+index 0000000..5c07e49
+--- /dev/null
++++ b/app/static/subscription-test.css
+@@ -0,0 +1 @@
++body{margin:0;background:#f7f6f1;color:#193c4d;font:16px/1.7 system-ui,sans-serif}main{max-width:880px;margin:60px auto;padding:32px}a{color:#007da8}.eyebrow{color:#007da8;letter-spacing:.14em;font-size:12px;margin-top:40px}h1{font-size:32px;margin:8px 0}button{background:#087faa;color:#fff;border:0;border-radius:10px;padding:14px 24px;margin:8px 12px 8px 0;font:inherit;cursor:pointer}button:disabled{opacity:.45;cursor:default}article{background:white;border:1px solid #c8e3ef;border-radius:14px;padding:20px;margin:16px 0}pre{white-space:pre-wrap;overflow-wrap:anywhere;font:inherit}.note{color:#647e8d;font-size:14px}#notice{color:#91591e}
+diff --git a/app/static/subscription-test.html b/app/static/subscription-test.html
+new file mode 100644
+index 0000000..7c5e863
+--- /dev/null
++++ b/app/static/subscription-test.html
+@@ -0,0 +1 @@
++<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>订阅号池测试 · TokenBots</title><link rel="stylesheet" href="/static/subscription-test.css"><script defer src="/static/subscription-test.js"></script></head><body><main><a href="/console">← 返回控制台</a><p class="eyebrow">TOKENBOTS · 管理员测试</p><h1>订阅号池连接测试</h1><p>通过网站发起请求，由本机订阅账号执行。每次只发送一句 hi，模型为 6.1 Sol。</p><p id="connection">正在确认登录与连接…</p><div><button data-target="pro" disabled>测试 Pro 100</button><button data-target="plus" disabled>测试 Plus</button></div><p id="notice" role="status"></p><section id="results"></section><p class="note">本页验证网站到本机账号的调用链路，尚未接入客户 API、扣费或自动切换。电脑休眠、程序退出或测试到期后将停止服务。失败不会自动重试。</p></main></body></html>
+diff --git a/app/static/subscription-test.js b/app/static/subscription-test.js
+new file mode 100644
+index 0000000..df734a4
+--- /dev/null
++++ b/app/static/subscription-test.js
+@@ -0,0 +1,7 @@
++'use strict';
++let csrf='', pending=false;
++const buttons=[...document.querySelectorAll('button[data-target]')];
++async function call(path,body){const r=await fetch(path,{method:body?'POST':'GET',headers:body?{'Content-Type':'application/json','X-CSRF-Token':csrf}:{},body:body?JSON.stringify(body):undefined,credentials:'same-origin',cache:'no-store'});const j=await r.json();if(!r.ok)throw Error(j.error||'请求失败');return j;}
++async function refresh(){try{const s=await call('/api/pilot/status');document.getElementById('connection').textContent=s.connected?'本机测试程序已连接':'本机测试程序未连接';const busy=s.jobs.some(j=>['queued','running'].includes(j.status));buttons.forEach(b=>b.disabled=pending||busy||!s.connected);const list=document.getElementById('results');list.replaceChildren();for(const j of [...s.jobs].reverse()){const a=document.createElement('article'),h=document.createElement('strong'),p=document.createElement('pre');h.textContent=`${j.target==='pro'?'Pro 100':'Plus'} · ${{queued:'等待本机领取',running:'正在调用',completed:'完成',failed:'失败',unknown:'结果未知'}[j.status]||j.status}`;p.textContent=j.output||'等待结果…';a.append(h,p);list.append(a);}}catch(e){document.getElementById('connection').textContent=e.message;buttons.forEach(b=>b.disabled=true);}}
++buttons.forEach(b=>b.addEventListener('click',async()=>{pending=true;buttons.forEach(x=>x.disabled=true);document.getElementById('notice').textContent='';try{await call('/api/pilot/run',{target:b.dataset.target});}catch(e){document.getElementById('notice').textContent=e.message;}finally{pending=false;await refresh();}}));
++(async()=>{try{csrf=(await call('/api/portal/me')).csrf;await refresh();setInterval(refresh,3000);}catch(e){document.getElementById('connection').textContent='请先在控制台登录管理员账号。';}})();
+diff --git a/tests/test_pilot_bridge.py b/tests/test_pilot_bridge.py
+new file mode 100644
+index 0000000..4907c01
+--- /dev/null
++++ b/tests/test_pilot_bridge.py
+@@ -0,0 +1,98 @@
++import time
++from types import SimpleNamespace
++
++import pytest
++from fastapi import FastAPI
++from fastapi.testclient import TestClient
++
++from app.pilot_bridge import mount_pilot
++from app.portal_store import PortalError
++
++TOKEN = 'test-worker-secret-' * 4
++WORKER = {'Authorization': 'Bearer ' + TOKEN}
++OWNER = {'Origin': 'https://example.test', 'X-CSRF-Token': 'csrf-owner'}
++
++
++class Store:
++    def session(self, token):
++        if token not in ('owner', 'other-admin', 'customer'):
++            raise PortalError('login', 401)
++        return {'id': token, 'role': 'customer' if token == 'customer' else 'admin',
++                'csrf': 'csrf-' + token}
++
++
++@pytest.fixture
++def client(monkeypatch):
++    monkeypatch.setenv('PILOT_WORKER_TOKEN', TOKEN)
++    monkeypatch.setenv('PILOT_ADMIN_USER_ID', 'owner')
++    monkeypatch.setenv('PILOT_EXPIRES_AT', str(time.time() + 3600))
++    app = FastAPI()
++    app.state.portal = Store()
++    mount_pilot(app, SimpleNamespace(public_origin='https://example.test'))
++    with TestClient(app, base_url='https://example.test') as c:
++        yield c
++
++
++def owner(c):
++    c.cookies.set('tb_session', 'owner')
++
++
++def test_owner_only_and_expiry(client, monkeypatch):
++    assert client.get('/api/pilot/status').status_code == 401
++    for token in ('customer', 'other-admin'):
++        client.cookies.set('tb_session', token)
++        assert client.get('/api/pilot/status').status_code == 403
++    owner(client)
++    assert client.get('/api/pilot/status').status_code == 200
++    monkeypatch.setenv('PILOT_EXPIRES_AT', '0')
++    assert client.get('/api/pilot/status').status_code == 503
++    assert client.post('/api/pilot/worker/claim', headers=WORKER, json={}).status_code == 503
++
++
++def test_csrf_and_fixed_payload(client):
++    owner(client)
++    assert client.post('/api/pilot/run', json={'target': 'pro'}).status_code == 403
++    assert client.post('/api/pilot/run', headers={**OWNER, 'Origin': 'https://evil.test'}, json={'target':'pro'}).status_code == 403
++    for data in ({'target':'other'}, {'target':'pro','url':'http://localhost'}, {'target':'pro','prompt':'arbitrary'}):
++        assert client.post('/api/pilot/run', headers=OWNER, json=data).status_code == 400
++
++
++def test_worker_auth_and_disconnected(client):
++    assert client.post('/api/pilot/worker/claim', json={}).status_code == 401
++    owner(client)
++    assert client.post('/api/pilot/run', headers=OWNER, json={'target':'pro'}).status_code == 503
++
++
++def test_once_only_claim_result_and_bounded_output(client):
++    owner(client)
++    assert client.post('/api/pilot/worker/claim', headers=WORKER, json={}).json() == {'job': None}
++    run = client.post('/api/pilot/run', headers=OWNER, json={'target':'pro'})
++    assert run.status_code == 200
++    jid = run.json()['id']
++    job = client.post('/api/pilot/worker/claim', headers=WORKER, json={}).json()['job']
++    assert job['id'] == jid and job['status'] == 'running'
++    assert client.post('/api/pilot/worker/claim', headers=WORKER, json={}).json()['job'] is None
++    assert client.post('/api/pilot/run', headers=OWNER, json={'target':'plus'}).status_code == 429
++    data = {'id':jid,'status':'completed','output':'x'*2001}
++    assert client.post('/api/pilot/worker/result', headers=WORKER, json=data).status_code == 400
++    data['output'] = 'Synthetic test reply'
++    assert client.post('/api/pilot/worker/result', headers=WORKER, json=data).status_code == 200
++    assert client.post('/api/pilot/worker/result', headers=WORKER, json=data).status_code == 409
++    assert client.get('/api/pilot/status').json()['jobs'][0]['output'] == data['output']
++
++
++def test_timeout_never_requeues(client, monkeypatch):
++    owner(client)
++    client.post('/api/pilot/worker/claim', headers=WORKER, json={})
++    client.post('/api/pilot/run', headers=OWNER, json={'target':'plus'})
++    client.post('/api/pilot/worker/claim', headers=WORKER, json={})
++    now = time.time()
++    monkeypatch.setattr('app.pilot_bridge.time.time', lambda: now + 181)
++    assert client.get('/api/pilot/status').json()['jobs'][0]['status'] == 'unknown'
++    assert client.post('/api/pilot/worker/claim', headers=WORKER, json={}).json()['job'] is None
++
++
++def test_body_and_url_bounds(client):
++    owner(client)
++    assert client.get('/api/pilot/status?token=bad').status_code == 400
++    assert client.post('/api/pilot/run',headers=OWNER,json={'target':'x'*9000}).status_code == 413
