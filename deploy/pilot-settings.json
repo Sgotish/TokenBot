@@ -1,0 +1,10 @@
+{
+  "site_name": "TokenBot 测试版",
+  "site_subtitle": "多模型接入 · 小范围试用",
+  "registration_enabled": false,
+  "payment_enabled": false,
+  "promo_code_enabled": false,
+  "channel_monitor_enabled": true,
+  "channel_monitor_mode": "v2",
+  "api_key_acl_trust_forwarded_ip": false
+}

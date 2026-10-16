@@ -11,6 +11,7 @@
 - `tokenbot/`：持久化异步任务队列、原生 Batch 提交与状态查询、缓存统计和成本计算。
 - [选型与范围](docs/architecture.md)、[部署运维](docs/operations.md)、[客户接入](docs/client-guide.md)、[人工验收](docs/acceptance.md)、[成本规则](docs/costs.md)。
 - [验收状态](docs/verification.md)：区分实际已测、未测及阻塞项。
+- [订阅接入方案](docs/subscription-pilot.md)：Plus/Pro 授权、分组、容量与计费边界。
 
 ## Linux / Docker
 
@@ -39,6 +40,8 @@ python3 scripts/local_runtime.py stop
 安装器核验固定 SHA-256，仅提取发行包中的可执行文件。应用使用 8180，独立 PostgreSQL/Redis 使用 55439/56389，均只监听 127.0.0.1。`.runtime` 含数据库及凭据，必须保密。
 
 管理员首次登录会看到 Sub2API 自身的协议确认页，应由实际运营者阅读后确认。工具不代签、不删除该门槛。
+
+试用配置清单见 `deploy/pilot-settings.json`，在管理后台逐项核对后保存：关闭注册和支付，监控使用 V2 被动模式。尚无上游账号的独立本地实例可执行 `python3 scripts/check_local_access.py`，验证客户权限、余额拦截和空池行为。它创建临时测试对象，最后停用并清除测试余额；已有上游账号时拒绝执行。
 
 ## 批处理与核算
 
