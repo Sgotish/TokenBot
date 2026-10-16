@@ -1,5 +1,7 @@
 import time
 import httpx
+import json
+import zstandard
 from fastapi.testclient import TestClient
 from tokenbot.partner_gateway import create_app, MODEL
 
@@ -22,6 +24,12 @@ def test_gateway_limits_auth_paths_and_preserves_stream():
         r=c.post('/v1/responses',json={'model':MODEL,'input':'hi','stream':True})
         assert r.status_code==200 and r.content==b'data: {"test":"synthetic"}\n\n'
         assert len(calls)==1 and str(calls[0].url)=='http://127.0.0.1:8180/v1/responses'
+        compressed=zstandard.ZstdCompressor().compress(json.dumps({'model':MODEL,'input':'hi'}).encode())
+        assert c.post('/v1/responses',content=compressed,headers={'content-encoding':'zstd'}).status_code==200
+        assert json.loads(calls[-1].content)['model']==MODEL
+        bomb=zstandard.ZstdCompressor().compress(b'x'*(2*1024*1024+1))
+        assert c.post('/v1/responses',content=bomb,headers={'content-encoding':'zstd'}).status_code==413
+        assert c.get('/v1/models?client_version=0.162').status_code==200
         cfg['allowed_ips']=[]
         assert c.get('/v1/models').status_code==403
         cfg['allowed_ips']=['testclient'];cfg['expires_at']=0

@@ -2,11 +2,13 @@
 import asyncio
 import hmac
 import json
+import io
 import time
 from contextlib import asynccontextmanager
 from pathlib import Path
 
 import httpx
+import zstandard
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse, StreamingResponse
 from starlette.background import BackgroundTask
@@ -38,7 +40,8 @@ def create_app(config, transport=None):
             return error('Device not allowed', 403)
         if not hmac.compare_digest(request.headers.get('authorization', '').encode(), ('Bearer ' + config['key']).encode()):
             return error('Invalid test key', 401)
-        if request.query_params or (request.method, path) not in {
+        if (request.query_params and not (request.method == 'GET' and path == 'v1/models'
+                and set(request.query_params) == {'client_version'})) or (request.method, path) not in {
                 ('GET', 'v1/models'), ('POST', 'v1/responses'), ('POST', 'v1/chat/completions')}:
             return error('Endpoint not available in this test', 404)
         body = b''
@@ -49,12 +52,20 @@ def create_app(config, transport=None):
                         body += chunk
                         if len(body) > 2 * 1024 * 1024:
                             return error('Test input exceeds 2 MiB', 413)
+                encoding = request.headers.get('content-encoding', 'identity').lower()
+                if encoding == 'zstd':
+                    with zstandard.ZstdDecompressor(max_window_size=8192).stream_reader(io.BytesIO(body)) as reader:
+                        body = reader.read(2 * 1024 * 1024 + 1)
+                    if len(body) > 2 * 1024 * 1024:
+                        return error('Decompressed input exceeds 2 MiB', 413)
+                elif encoding != 'identity':
+                    return error('Unsupported request encoding', 415)
                 data = json.loads(body)
                 if not isinstance(data, dict) or data.get('model') != MODEL:
                     return error('Use the verified test model: ' + MODEL, 400)
                 if data.get('background') or data.get('service_tier') not in (None, 'auto', 'default'):
                     return error('Background and priority requests are disabled', 400)
-            except (ValueError, UnicodeError, TimeoutError):
+            except (ValueError, UnicodeError, TimeoutError, zstandard.ZstdError):
                 return error('Invalid request', 400)
         # Fixed discovery list is an allowlist, not a claim about all upstream models.
         if request.method == 'GET':

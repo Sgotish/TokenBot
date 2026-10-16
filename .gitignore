@@ -3,6 +3,7 @@
 !.env.example
 .runtime/
 private/
+delivery/
 reports/
 *.sqlite*
 *.log
