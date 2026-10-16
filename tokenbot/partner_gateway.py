@@ -1,0 +1,107 @@
+"""Temporary API-only bridge. Bind loopback until a partner's private IP is known."""
+import asyncio
+import hmac
+import json
+import time
+from contextlib import asynccontextmanager
+from pathlib import Path
+
+import httpx
+from fastapi import FastAPI, Request
+from fastapi.responses import JSONResponse, StreamingResponse
+from starlette.background import BackgroundTask
+
+ROOT = Path(__file__).resolve().parents[1]
+MODEL = 'gpt-6.1-sol'
+
+
+def create_app(config, transport=None):
+    lock = asyncio.Lock()
+    client = httpx.AsyncClient(base_url='http://127.0.0.1:8180', trust_env=False,
+                              follow_redirects=False, timeout=300, transport=transport)
+
+    @asynccontextmanager
+    async def lifespan(app):
+        yield
+        await client.aclose()
+
+    app = FastAPI(docs_url=None, redoc_url=None, openapi_url=None, lifespan=lifespan)
+
+    def error(message, status):
+        return JSONResponse({'error': {'message': message, 'type': 'partner_test'}}, status_code=status)
+
+    @app.api_route('/{path:path}', methods=['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS', 'HEAD'])
+    async def proxy(path: str, request: Request):
+        if time.time() >= config['expires_at']:
+            return error('Test expired', 403)
+        if request.client is None or request.client.host not in config['allowed_ips']:
+            return error('Device not allowed', 403)
+        if not hmac.compare_digest(request.headers.get('authorization', '').encode(), ('Bearer ' + config['key']).encode()):
+            return error('Invalid test key', 401)
+        if request.query_params or (request.method, path) not in {
+                ('GET', 'v1/models'), ('POST', 'v1/responses'), ('POST', 'v1/chat/completions')}:
+            return error('Endpoint not available in this test', 404)
+        body = b''
+        if request.method == 'POST':
+            try:
+                async with asyncio.timeout(10):
+                    async for chunk in request.stream():
+                        body += chunk
+                        if len(body) > 2 * 1024 * 1024:
+                            return error('Test input exceeds 2 MiB', 413)
+                data = json.loads(body)
+                if not isinstance(data, dict) or data.get('model') != MODEL:
+                    return error('Use the verified test model: ' + MODEL, 400)
+                if data.get('background') or data.get('service_tier') not in (None, 'auto', 'default'):
+                    return error('Background and priority requests are disabled', 400)
+            except (ValueError, UnicodeError, TimeoutError):
+                return error('Invalid request', 400)
+        # Fixed discovery list is an allowlist, not a claim about all upstream models.
+        if request.method == 'GET':
+            return {'object': 'list', 'data': [{'id': MODEL, 'object': 'model', 'owned_by': 'subscription-pilot'}]}
+        if lock.locked():
+            return error('One test request at a time', 429)
+        await lock.acquire()
+        released = False
+        def release():
+            nonlocal released
+            if not released:
+                released = True
+                lock.release()
+        try:
+            upstream = await client.send(client.build_request('POST', '/' + path, content=body,
+                headers={'Authorization': 'Bearer ' + config['key'], 'Content-Type': 'application/json'}), stream=True)
+            if 300 <= upstream.status_code < 400:
+                await upstream.aclose()
+                release()
+                return error('Unexpected upstream redirect', 502)
+        except asyncio.CancelledError:
+            release()
+            raise
+        except Exception:
+            release()
+            return error('Local gateway unavailable; request was not retried', 502)
+
+        async def cleanup():
+            try:
+                await upstream.aclose()
+            finally:
+                release()
+
+        async def chunks():
+            try:
+                async for chunk in upstream.aiter_bytes():
+                    yield chunk
+            finally:
+                await cleanup()
+
+        return StreamingResponse(chunks(), status_code=upstream.status_code,
+                                 media_type=upstream.headers.get('content-type', 'application/json'),
+                                 headers={'Cache-Control': 'no-store', 'X-Accel-Buffering': 'no'},
+                                 background=BackgroundTask(cleanup))
+
+    return app
+
+
+def app_factory():
+    return create_app(json.loads((ROOT / '.runtime/partner-test.json').read_text()))
