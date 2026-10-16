@@ -1,0 +1,10 @@
+{
+  "currency": "EXAMPLE_UNITS",
+  "note": "Synthetic prices for validating the calculator; replace from confirmed provider/customer price sheets. Not a quote.",
+  "models": {
+    "test-model": {
+      "cost": {"uncached": "2", "cache_read": "0.2", "cache_write": "2.5", "output": "8"},
+      "sell": {"uncached": "2.25", "cache_read": "0.225", "cache_write": "2.8125", "output": "9"}
+    }
+  }
+}

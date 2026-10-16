@@ -1,0 +1,67 @@
+# Adapted configuration concepts from Wei-Shaw/sub2api v0.2.16 deploy/docker-compose.yml.
+# Separate data store, no production DB or website cutover.
+name: tokenbot-pilot
+services:
+  gateway:
+    image: ${SUB2API_IMAGE:-weishaw/sub2api:0.2.16@sha256:799e9b4ee9e3164f13fe74f4df93022048cb902eda533b98fe5751c883eb1a7c}
+    restart: unless-stopped
+    ports: ["127.0.0.1:8180:8080"]
+    security_opt: ["no-new-privileges:true"]
+    volumes: ["gateway-data:/app/data"]
+    environment:
+      AUTO_SETUP: "true"
+      SERVER_HOST: 0.0.0.0
+      SERVER_PORT: "8080"
+      RUN_MODE: standard
+      DATABASE_HOST: postgres
+      DATABASE_PORT: "5432"
+      DATABASE_USER: tokenbot
+      DATABASE_DBNAME: tokenbot
+      DATABASE_PASSWORD: ${POSTGRES_PASSWORD:?Generate .env first}
+      DATABASE_SSLMODE: disable
+      REDIS_HOST: redis
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?Generate .env first}
+      ADMIN_EMAIL: ${ADMIN_EMAIL:?Set ADMIN_EMAIL}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:?Generate .env first}
+      JWT_SECRET: ${JWT_SECRET:?Generate .env first}
+      TOTP_ENCRYPTION_KEY: ${TOTP_ENCRYPTION_KEY:?Generate .env first}
+      SECURITY_URL_ALLOWLIST_ALLOW_INSECURE_HTTP: "false"
+      SECURITY_URL_ALLOWLIST_ALLOW_PRIVATE_HOSTS: "false"
+      TZ: UTC
+    depends_on:
+      postgres: {condition: service_healthy}
+      redis: {condition: service_healthy}
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://127.0.0.1:8080/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+  postgres:
+    image: postgres:16.15-alpine@sha256:721873c34ceb9f8d8fc265984940dc982404c105f19ad51be9fdc5970a6080ea
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: tokenbot
+      POSTGRES_DB: tokenbot
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Generate .env first}
+    volumes: ["postgres-data:/var/lib/postgresql/data"]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U tokenbot -d tokenbot"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+  redis:
+    image: redis:8.2-alpine@sha256:b51665e66f00759be7c3152ad5ac3c66fb2f619c13ef62dea7cc1f9914524635
+    restart: unless-stopped
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?Generate .env first}
+    command: ["sh", "-c", 'exec redis-server --appendonly yes --requirepass "$$REDIS_PASSWORD"']
+    volumes: ["redis-data:/data"]
+    healthcheck:
+      test: ["CMD-SHELL", 'REDISCLI_AUTH="$$REDIS_PASSWORD" redis-cli ping | grep -q PONG']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+volumes:
+  gateway-data:
+  postgres-data:
+  redis-data:

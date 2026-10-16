@@ -1,0 +1,12 @@
+{
+  "currency": "EXAMPLE_UNITS",
+  "period": "synthetic-month",
+  "deposits_received": "2000",
+  "earned_revenue": "1200",
+  "upstream_api_cost": "200",
+  "subscription_cost": "300",
+  "hosting_cost": "100",
+  "maintenance_cost": "150",
+  "payment_fees": "20",
+  "refund_cost": "30"
+}

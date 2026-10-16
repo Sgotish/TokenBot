@@ -1,0 +1,10 @@
+{
+  "repository": "https://github.com/Wei-Shaw/sub2api",
+  "tag": "v0.2.16",
+  "commit": "01842576b3d5c1e2545b5a99ad555d36e28ed306",
+  "license": "LGPL-3.0-or-later",
+  "darwin_arm64_asset": "sub2api_0.2.16_darwin_arm64.tar.gz",
+  "darwin_arm64_sha256": "e6f076ba2ea6cbb912f5c285299e341494a603b1c8400846c425e8849f252975",
+  "source_changes": false,
+  "container_image": "weishaw/sub2api:0.2.16@sha256:799e9b4ee9e3164f13fe74f4df93022048cb902eda533b98fe5751c883eb1a7c"
+}

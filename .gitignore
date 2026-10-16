@@ -1,0 +1,14 @@
+.env
+.env.*
+!.env.example
+.runtime/
+private/
+reports/
+*.sqlite*
+*.log
+*.pem
+*.key
+__pycache__/
+.pytest_cache/
+.venv/
+.DS_Store
