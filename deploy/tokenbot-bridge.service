@@ -1,0 +1,22 @@
+[Unit]
+Description=TokenBot private partner API bridge
+After=network-online.target docker.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=tokenbot-bridge
+Group=tokenbot-bridge
+WorkingDirectory=/opt/tokenbot-pilot
+Environment=TOKENBOT_BRIDGE_CONFIG=/opt/tokenbot-pilot/private/partner.json
+ExecStart=/opt/tokenbot-pilot/venv/bin/python -m uvicorn tokenbot.partner_gateway:app_factory --factory --host 127.0.0.1 --port 8181 --no-proxy-headers --no-access-log --limit-concurrency 16
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+MemoryMax=128M
+
+[Install]
+WantedBy=multi-user.target

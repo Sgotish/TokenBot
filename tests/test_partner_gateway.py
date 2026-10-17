@@ -47,3 +47,52 @@ def test_redirect_is_not_followed_and_slot_is_released():
         for _ in range(2):
             assert c.post('/v1/responses',json={'model':MODEL,'input':'hi'}).status_code==502
     assert len(calls)==2
+
+
+def test_cloud_trial_has_no_expiry_but_still_requires_key():
+    cfg={'expires_at':None,'allowed_ips':['testclient'],'key':'synthetic-cloud-key','max_concurrency':2}
+    def upstream(request):
+        return httpx.Response(200,json={'ok':True})
+    with TestClient(create_app(cfg,httpx.MockTransport(upstream))) as c:
+        assert c.get('/v1/models').status_code==401
+        c.headers['authorization']='Bearer synthetic-cloud-key'
+        assert c.post('/v1/responses',json={'model':MODEL,'input':'hi'}).status_code==200
+        assert c.get('/api/v1/admin/accounts').status_code==404
+        cfg['expires_at']=0
+        assert c.get('/v1/models').status_code==403
+
+
+def test_cloud_concurrency_releases_slots_after_completion():
+    import asyncio
+
+    async def scenario():
+        entered = 0
+        both_entered = asyncio.Event()
+        finish = asyncio.Event()
+
+        async def upstream(request):
+            nonlocal entered
+            entered += 1
+            if entered == 2:
+                both_entered.set()
+            await finish.wait()
+            return httpx.Response(200, json={'ok': True})
+
+        cfg = {'expires_at': None, 'allowed_ips': ['127.0.0.1'],
+               'key': 'synthetic-cloud-key', 'max_concurrency': 2}
+        app = create_app(cfg, httpx.MockTransport(upstream))
+        async with app.router.lifespan_context(app):
+            async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app),
+                    base_url='http://trial', headers={'authorization': 'Bearer synthetic-cloud-key'}) as c:
+                async def call():
+                    return await c.post('/v1/responses', json={'model': MODEL, 'input': 'hi'})
+                first, second = asyncio.create_task(call()), asyncio.create_task(call())
+                try:
+                    await asyncio.wait_for(both_entered.wait(), 2)
+                    assert (await call()).status_code == 429
+                finally:
+                    finish.set()
+                assert [r.status_code for r in await asyncio.gather(first, second)] == [200, 200]
+                assert (await call()).status_code == 200
+
+    asyncio.run(scenario())

@@ -1,8 +1,9 @@
-"""Temporary API-only bridge. Bind loopback until a partner's private IP is known."""
+"""API-only trial bridge; bind loopback behind the verified HTTPS entry."""
 import asyncio
 import hmac
 import json
 import io
+import os
 import time
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -18,7 +19,10 @@ MODEL = 'gpt-6.1-sol'
 
 
 def create_app(config, transport=None):
-    lock = asyncio.Lock()
+    concurrency = int(config.get('max_concurrency', 1))
+    if concurrency < 1 or concurrency > 8:
+        raise ValueError('Invalid bridge concurrency')
+    lock = asyncio.Semaphore(concurrency)
     client = httpx.AsyncClient(base_url='http://127.0.0.1:8180', trust_env=False,
                               follow_redirects=False, timeout=300, transport=transport)
 
@@ -34,7 +38,7 @@ def create_app(config, transport=None):
 
     @app.api_route('/{path:path}', methods=['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS', 'HEAD'])
     async def proxy(path: str, request: Request):
-        if time.time() >= config['expires_at']:
+        if config['expires_at'] is not None and time.time() >= config['expires_at']:
             return error('Test expired', 403)
         if request.client is None or request.client.host not in config['allowed_ips']:
             return error('Device not allowed', 403)
@@ -71,7 +75,7 @@ def create_app(config, transport=None):
         if request.method == 'GET':
             return {'object': 'list', 'data': [{'id': MODEL, 'object': 'model', 'owned_by': 'subscription-pilot'}]}
         if lock.locked():
-            return error('One test request at a time', 429)
+            return error('Test server is busy; retry after the current request finishes', 429)
         await lock.acquire()
         released = False
         def release():
@@ -115,4 +119,5 @@ def create_app(config, transport=None):
 
 
 def app_factory():
-    return create_app(json.loads((ROOT / '.runtime/partner-test.json').read_text()))
+    path = Path(os.environ.get('TOKENBOT_BRIDGE_CONFIG', ROOT / '.runtime/partner-test.json'))
+    return create_app(json.loads(path.read_text()))
