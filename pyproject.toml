@@ -14,3 +14,6 @@ tokenbot = "tokenbot.cli:main"
 
 [tool.setuptools]
 packages = ["tokenbot"]
+
+[tool.setuptools.package-data]
+tokenbot = ["static/*.html", "static/*.css", "static/*.js"]

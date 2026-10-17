@@ -1,4 +1,4 @@
-"""API-only trial bridge; bind loopback behind the verified HTTPS entry."""
+"""Trial API and private usage portal; bind loopback behind verified HTTPS."""
 import asyncio
 import hmac
 import json
@@ -14,6 +14,8 @@ from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse, StreamingResponse
 from starlette.background import BackgroundTask
 
+from tokenbot.partner_portal import PoolState, install_portal
+
 ROOT = Path(__file__).resolve().parents[1]
 MODEL = 'gpt-6.1-sol'
 
@@ -23,6 +25,7 @@ def create_app(config, transport=None):
     if concurrency < 1 or concurrency > 8:
         raise ValueError('Invalid bridge concurrency')
     lock = asyncio.Semaphore(concurrency)
+    state = PoolState(config)
     client = httpx.AsyncClient(base_url='http://127.0.0.1:8180', trust_env=False,
                               follow_redirects=False, timeout=300, transport=transport)
 
@@ -33,6 +36,10 @@ def create_app(config, transport=None):
 
     app = FastAPI(docs_url=None, redoc_url=None, openapi_url=None, lifespan=lifespan)
 
+    if config.get("public_origin"):
+        install_portal(app, config, state)
+    app.state.pool_state = state
+
     def error(message, status):
         return JSONResponse({'error': {'message': message, 'type': 'partner_test'}}, status_code=status)
 
@@ -42,8 +49,12 @@ def create_app(config, transport=None):
             return error('Test expired', 403)
         if request.client is None or request.client.host not in config['allowed_ips']:
             return error('Device not allowed', 403)
-        if not hmac.compare_digest(request.headers.get('authorization', '').encode(), ('Bearer ' + config['key']).encode()):
-            return error('Invalid test key', 401)
+        bearer_ok = hmac.compare_digest(request.headers.get('authorization', '').encode(), ('Bearer ' + config['key']).encode())
+        if not bearer_ok:
+            if not config.get('public_origin') or not app.state.portal_authorized(request):
+                return error('Invalid test key', 401)
+            if request.method != 'GET' and not app.state.portal_same_origin(request):
+                return error('Invalid request origin', 403)
         if (request.query_params and not (request.method == 'GET' and path == 'v1/models'
                 and set(request.query_params) == {'client_version'})) or (request.method, path) not in {
                 ('GET', 'v1/models'), ('POST', 'v1/responses'), ('POST', 'v1/chat/completions')}:
@@ -77,15 +88,19 @@ def create_app(config, transport=None):
         if lock.locked():
             return error('Test server is busy; retry after the current request finishes', 429)
         await lock.acquire()
+        state.active += 1
+        selected = state.selected
+        upstream_key = state.pools[selected]["key"]
         released = False
         def release():
             nonlocal released
             if not released:
                 released = True
                 lock.release()
+                state.active -= 1
         try:
             upstream = await client.send(client.build_request('POST', '/' + path, content=body,
-                headers={'Authorization': 'Bearer ' + config['key'], 'Content-Type': 'application/json'}), stream=True)
+                headers={'Authorization': 'Bearer ' + upstream_key, 'Content-Type': 'application/json'}), stream=True)
             if 300 <= upstream.status_code < 400:
                 await upstream.aclose()
                 release()
@@ -112,7 +127,7 @@ def create_app(config, transport=None):
 
         return StreamingResponse(chunks(), status_code=upstream.status_code,
                                  media_type=upstream.headers.get('content-type', 'application/json'),
-                                 headers={'Cache-Control': 'no-store', 'X-Accel-Buffering': 'no'},
+                                 headers={'Cache-Control': 'no-store', 'X-Accel-Buffering': 'no', 'X-TokenBot-Pool': selected},
                                  background=BackgroundTask(cleanup))
 
     return app

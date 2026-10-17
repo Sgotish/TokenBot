@@ -12,6 +12,8 @@ Environment=TOKENBOT_BRIDGE_CONFIG=/opt/tokenbot-pilot/private/partner.json
 ExecStart=/opt/tokenbot-pilot/venv/bin/python -m uvicorn tokenbot.partner_gateway:app_factory --factory --host 127.0.0.1 --port 8181 --no-proxy-headers --no-access-log --limit-concurrency 16
 Restart=on-failure
 RestartSec=5
+StateDirectory=tokenbot-bridge
+StateDirectoryMode=0700
 NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=strict

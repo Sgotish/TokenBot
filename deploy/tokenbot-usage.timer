@@ -1,0 +1,8 @@
+[Unit]
+Description=Refresh partner usage every minute
+[Timer]
+OnBootSec=20
+OnUnitInactiveSec=60
+Unit=tokenbot-usage.service
+[Install]
+WantedBy=timers.target

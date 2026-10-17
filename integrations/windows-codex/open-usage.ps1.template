@@ -1,0 +1,8 @@
+$ErrorActionPreference = 'Stop'
+$keyFile = Join-Path $PSScriptRoot 'usage-key.txt'
+if (-not (Test-Path -LiteralPath $keyFile)) { throw 'Keep usage-key.txt beside this script.' }
+$partnerKey = (Get-Content -Raw -LiteralPath $keyFile).Trim()
+Set-Clipboard -Value $partnerKey
+Start-Process '__PORTAL_URL__'
+Write-Host 'Key copied. Paste it into the portal login field. Do not share this folder publicly.'
+Write-Host 'Choose Auto, Plus or Pro after finishing active tasks, then start a new Codex chat.'

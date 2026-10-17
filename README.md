@@ -8,6 +8,7 @@
 
 - `deploy/compose.yaml`：独立 PostgreSQL + Redis + Sub2API；仅监听本机回环地址。
 - [两账号云端测试](docs/cloud-test.md)：现有 1 GB 服务器上的免平台计费试点、备份与私有 Windows 交付。
+- 搭档用量页 `/portal`：选择自动 / Plus / Pro，查看上游剩余窗口、快照时间和实际调用账号；Windows 包附带独立快捷入口（非 Codex 原生菜单改造）。
 - `scripts/local_runtime.py`：macOS ARM 本地启动/停止，不注册开机服务。
 - `tokenbot/`：持久化异步任务队列、原生 Batch 提交与状态查询、缓存统计和成本计算。
 - [选型与范围](docs/architecture.md)、[部署运维](docs/operations.md)、[客户接入](docs/client-guide.md)、[人工验收](docs/acceptance.md)、[成本规则](docs/costs.md)。

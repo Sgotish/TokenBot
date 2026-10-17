@@ -3,9 +3,7 @@ services:
   gateway:
     mem_limit: 384m
     environment:
-      RUN_MODE: simple
-      SIMPLE_MODE_AUTO_CREATE_DEFAULT_GROUPS: "false"
-      SIMPLE_MODE_KEY_RATE_LIMIT_ENABLED: "false"
+      RUN_MODE: standard
       GOMEMLIMIT: 256MiB
       GOMAXPROCS: "1"
       DATABASE_MAX_OPEN_CONNS: "10"
