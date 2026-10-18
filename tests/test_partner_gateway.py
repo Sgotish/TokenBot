@@ -89,10 +89,32 @@ def test_cloud_concurrency_releases_slots_after_completion():
                 first, second = asyncio.create_task(call()), asyncio.create_task(call())
                 try:
                     await asyncio.wait_for(both_entered.wait(), 2)
-                    assert (await call()).status_code == 429
+                    busy = await call()
+                    assert busy.status_code == 429 and busy.headers['retry-after'] == '5'
+                    assert busy.headers['x-tokenbot-error-source'] == 'bridge_concurrency'
                 finally:
                     finish.set()
                 assert [r.status_code for r in await asyncio.gather(first, second)] == [200, 200]
                 assert (await call()).status_code == 200
 
     asyncio.run(scenario())
+
+
+def test_session_affinity_and_retry_metadata_are_preserved_without_credentials():
+    def upstream(request):
+        assert request.headers['session_id'] == 'synthetic-session'
+        assert request.headers['authorization'] == 'Bearer internal-test-key'
+        assert 'cookie' not in request.headers
+        assert 'x-secret' not in request.headers
+        return httpx.Response(429, json={'error':'limited'}, headers={
+            'retry-after':'30', 'x-request-id':'synthetic-id', 'set-cookie':'never-forward'})
+    cfg = {'expires_at':None,'allowed_ips':['testclient'],'key':'public-test-key',
+           'pools':{'auto':{'key':'internal-test-key','label':'Auto'}}}
+    with TestClient(create_app(cfg,httpx.MockTransport(upstream))) as c:
+        r=c.post('/v1/responses',json={'model':MODEL,'input':'hi'},headers={
+            'Authorization':'Bearer public-test-key','session_id':'synthetic-session',
+            'Cookie':'private=secret','X-Secret':'private'})
+        assert r.status_code == 429 and r.headers['retry-after'] == '30'
+        assert r.headers['x-request-id'] == 'synthetic-id'
+        assert r.headers['x-tokenbot-error-source'] == 'upstream_gateway'
+        assert 'set-cookie' not in r.headers

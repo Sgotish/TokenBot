@@ -40,8 +40,8 @@ def create_app(config, transport=None):
         install_portal(app, config, state)
     app.state.pool_state = state
 
-    def error(message, status):
-        return JSONResponse({'error': {'message': message, 'type': 'partner_test'}}, status_code=status)
+    def error(message, status, headers=None):
+        return JSONResponse({'error': {'message': message, 'type': 'partner_test'}}, status_code=status, headers=headers)
 
     @app.api_route('/{path:path}', methods=['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS', 'HEAD'])
     async def proxy(path: str, request: Request):
@@ -86,7 +86,8 @@ def create_app(config, transport=None):
         if request.method == 'GET':
             return {'object': 'list', 'data': [{'id': MODEL, 'object': 'model', 'owned_by': 'subscription-pilot'}]}
         if lock.locked():
-            return error('Test server is busy; retry after the current request finishes', 429)
+            return error('Test server is busy; retry after the current request finishes', 429,
+                         {'Retry-After': '5', 'X-TokenBot-Error-Source': 'bridge_concurrency'})
         await lock.acquire()
         state.active += 1
         selected = state.selected
@@ -99,8 +100,13 @@ def create_app(config, transport=None):
                 lock.release()
                 state.active -= 1
         try:
+            # Preserve conversation affinity without forwarding cookies or arbitrary auth headers.
+            request_headers = {name: request.headers[name] for name in (
+                'session_id', 'conversation_id', 'x-codex-turn-state', 'x-codex-turn-metadata',
+                'originator', 'openai-beta', 'x-client-request-id') if name in request.headers}
+            request_headers.update({'Authorization': 'Bearer ' + upstream_key, 'Content-Type': 'application/json'})
             upstream = await client.send(client.build_request('POST', '/' + path, content=body,
-                headers={'Authorization': 'Bearer ' + upstream_key, 'Content-Type': 'application/json'}), stream=True)
+                headers=request_headers), stream=True)
             if 300 <= upstream.status_code < 400:
                 await upstream.aclose()
                 release()
@@ -125,9 +131,14 @@ def create_app(config, transport=None):
             finally:
                 await cleanup()
 
+        response_headers = {name: value for name, value in upstream.headers.items()
+                            if name in ('retry-after', 'x-request-id', 'x-codex-turn-state') or name.startswith('x-ratelimit-')}
+        response_headers.update({'Cache-Control': 'no-store', 'X-Accel-Buffering': 'no', 'X-TokenBot-Pool': selected})
+        if upstream.status_code >= 400:
+            response_headers['X-TokenBot-Error-Source'] = 'upstream_gateway'
         return StreamingResponse(chunks(), status_code=upstream.status_code,
                                  media_type=upstream.headers.get('content-type', 'application/json'),
-                                 headers={'Cache-Control': 'no-store', 'X-Accel-Buffering': 'no', 'X-TokenBot-Pool': selected},
+                                 headers=response_headers,
                                  background=BackgroundTask(cleanup))
 
     return app

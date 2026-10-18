@@ -41,3 +41,32 @@ def record_view(record, accounts, groups):
             'account': accounts.get(str(record.get('account_id')), '未知账号'),
             'model': record.get('model'), 'duration_ms': record.get('duration_ms'),
             'total_tokens': sum(int(record.get(k) or 0) for k in ('input_tokens','output_tokens','cache_read_tokens','cache_creation_tokens'))}
+
+
+def quota_view(account, label, quota, now):
+    """Project a fresh /wham/usage result; never export identity or credit data."""
+    fetched = quota.get('fetched_at')
+    if isinstance(fetched, bool) or not isinstance(fetched, (int, float)) or not math.isfinite(fetched) or fetched > now + 60 or now-fetched > 180:
+        raise ValueError('Quota response has no fresh timestamp')
+    limit = quota.get('rate_limit')
+    if not isinstance(limit, dict):
+        raise ValueError('Quota response has no rate limit data')
+    extra = {'codex_usage_updated_at': datetime.fromtimestamp(fetched, timezone.utc).isoformat()}
+    for name in ('primary_window', 'secondary_window'):
+        window = limit.get(name)
+        if not isinstance(window, dict):
+            continue
+        duration = window.get('limit_window_seconds')
+        code = {18000: '5h', 604800: '7d'}.get(duration) if isinstance(duration, (int, float)) else None
+        if not code:
+            continue
+        prefix = 'codex_'+code
+        reset = window.get('reset_at')
+        if isinstance(reset, bool) or not isinstance(reset, (int, float)) or not math.isfinite(reset):
+            reset = None
+        extra.update({prefix+'_used_percent': window.get('used_percent'),
+                      prefix+'_window_minutes': duration/60,
+                      prefix+'_reset_at': datetime.fromtimestamp(reset, timezone.utc).isoformat() if reset else None})
+    view = account_view({**account, 'extra': extra}, label, now)
+    view.update(source='quota_api', refresh_error=None, last_attempt_at=now)
+    return view

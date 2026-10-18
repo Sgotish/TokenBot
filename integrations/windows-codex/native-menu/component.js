@@ -4,12 +4,13 @@ function TokenBotsNativeUsage() {
   const [error, setError] = ma.useState('');
   const [expanded, setExpanded] = ma.useState(false);
   const [busy, setBusy] = ma.useState(false);
+  const [checkedAt, setCheckedAt] = ma.useState(null);
   const reload = async () => {
     try {
       const response = await fetch('app://-/tokenbots-native/usage', {cache: 'no-store'});
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || '用量暂不可用');
-      setStatus(data); setError('');
+      setStatus(data); setError(''); setCheckedAt(new Date().toLocaleTimeString());
     } catch { setStatus(null); setError('用量暂不可用'); }
   };
   ma.useEffect(() => {
@@ -19,7 +20,7 @@ function TokenBotsNativeUsage() {
         const response = await fetch('app://-/tokenbots-native/usage', {cache: 'no-store'});
         const data = await response.json();
         if (!response.ok) throw new Error();
-        if (live) { setStatus(data); setError(''); }
+        if (live) { setStatus(data); setError(''); setCheckedAt(new Date().toLocaleTimeString()); }
       } catch { if (live) { setStatus(null); setError('用量暂不可用'); } }
     };
     refresh();
@@ -55,14 +56,12 @@ function TokenBotsNativeUsage() {
     }),
     expanded ? $.jsxs('div', {
       'data-tokenbots-native-usage': true,
-      style: {padding: '8px 12px', maxWidth: 370, fontSize: 12, lineHeight: 1.6},
+      style: {padding: '8px 12px', maxWidth: 370, maxHeight: '55vh', overflowY: 'auto', fontSize: 12, lineHeight: 1.6},
       onClick: e => e.stopPropagation(),
       children: [
-        $.jsx('div', {children: 'TokenBots 订阅号池 · 每 30 秒刷新'}),
-        ...(status?.accounts || []).map(account => $.jsxs('div', {style: {marginTop: 8}, children: [
-          $.jsx('strong', {children: account.label}),
-          ...(account.windows || []).map(w => $.jsx('div', {children: `${w.label}：${!status.snapshot_stale && !account.snapshot_stale && !w.stale && typeof w.remaining_percent === 'number' && Date.parse(w.resets_at) > Date.now() ? w.remaining_percent + '%' : '未知 / 待更新'}${w.resets_at ? ' · 重置 ' + new Date(w.resets_at).toLocaleString() : ''}`}, w.label)),
-        ]}, account.label)),
+        $.jsx('div', {children: '每 30 秒检查 · 上游额度约每分钟更新'}),
+        $.jsx('div', {children: '本次检查：' + (checkedAt || '读取中')}),
+        $.jsx('button', {type: 'button', onClick: e => {e.preventDefault(); e.stopPropagation(); reload();}, children: '刷新显示'}),
         $.jsx('div', {style: {marginTop: 8}, children: '号池：' + (status?.selected_pool || '未知')}),
         $.jsx('div', {style: {display: 'flex', gap: 6}, children: ['auto', 'plus', 'pro'].map(pool => $.jsx('button', {
           type: 'button', disabled: busy || !!status?.active_requests,
@@ -70,6 +69,12 @@ function TokenBotsNativeUsage() {
           onClick: e => { e.preventDefault(); e.stopPropagation(); select(pool); },
           children: pool === 'auto' ? '自动' : pool === 'plus' ? 'Plus' : 'Pro',
         }, pool))}),
+        ...(status?.accounts || []).map(account => $.jsxs('div', {style: {marginTop: 8}, children: [
+          $.jsx('strong', {children: account.label}),
+          $.jsx('div', {children: '上游更新时间：' + (account.snapshot_at ? new Date(account.snapshot_at).toLocaleString() : '未知')}),
+          account.refresh_error ? $.jsx('div', {role: 'status', children: account.refresh_error}) : null,
+          ...(account.windows || []).map(w => $.jsx('div', {children: `${w.label}：${!status.snapshot_stale && !account.snapshot_stale && !w.stale && typeof w.remaining_percent === 'number' && Number.isFinite(w.remaining_percent) && Date.parse(w.resets_at) > Date.now() ? w.remaining_percent + '%' : (w.reason || '历史数据 / 待更新')}${w.remaining_percent !== null && w.resets_at ? ' · 重置 ' + new Date(w.resets_at).toLocaleString() : ''}`}, w.label)),
+        ]}, account.label)),
         $.jsx('div', {style: {marginTop: 8}, children: '平台不设消费限额；仍受订阅窗口限制。切换后请新建对话。'}),
       ],
     }) : null,
