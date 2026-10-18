@@ -94,6 +94,48 @@ try {
 Move-Item -LiteralPath $asar -Destination $backup
 try { Move-Item -LiteralPath ($asar + '.new') -Destination $asar }
 catch { Move-Item -LiteralPath $backup -Destination $asar; throw }
+# Repackage the custom archive's header hash using Electron's documented
+# INTEGRITY/ELECTRONASAR resource. Integrity enforcement stays enabled.
+# The resulting executable is a custom build, no longer OpenAI-signed.
+Add-Type @'
+using System;
+using System.Runtime.InteropServices;
+using System.Collections.Generic;
+public static class TokenBotsResource {
+  public delegate bool LanguageCallback(IntPtr module, string type, string name, ushort language, IntPtr param);
+  [DllImport("kernel32.dll", CharSet=CharSet.Unicode, SetLastError=true)] public static extern IntPtr LoadLibraryEx(string name, IntPtr file, uint flags);
+  [DllImport("kernel32.dll")] public static extern bool FreeLibrary(IntPtr module);
+  [DllImport("kernel32.dll", CharSet=CharSet.Unicode, SetLastError=true)] public static extern bool EnumResourceLanguages(IntPtr module, string type, string name, LanguageCallback callback, IntPtr param);
+  [DllImport("kernel32.dll", CharSet=CharSet.Unicode, SetLastError=true)] public static extern IntPtr BeginUpdateResource(string name, bool deleteExisting);
+  [DllImport("kernel32.dll", CharSet=CharSet.Unicode, SetLastError=true)] public static extern bool UpdateResource(IntPtr update, string type, string name, ushort language, byte[] data, uint size);
+  [DllImport("kernel32.dll", CharSet=CharSet.Unicode, SetLastError=true)] public static extern bool EndUpdateResource(IntPtr update, bool discard);
+  public static ushort[] Languages(string path) {
+    var result = new List<ushort>(); var module = LoadLibraryEx(path, IntPtr.Zero, 2);
+    if(module == IntPtr.Zero) throw new Exception("Cannot inspect custom executable resources");
+    try {
+      LanguageCallback callback = (m,t,n,l,p) => { result.Add(l); return true; };
+      if(!EnumResourceLanguages(module,"INTEGRITY","ELECTRONASAR",callback,IntPtr.Zero)) throw new Exception("Expected integrity resource missing");
+    } finally { FreeLibrary(module); }
+    return result.ToArray();
+  }
+}
+'@
+$exe = Join-Path $appDir 'ChatGPT.exe'
+Copy-Item -LiteralPath $exe -Destination ($exe + '.tokenbots-original')
+$languages = [TokenBotsResource]::Languages($exe)
+$headerHash = Hash-Bytes $json
+$metadata = [Text.Encoding]::UTF8.GetBytes(('[{"file":"resources\\app.asar","alg":"SHA256","value":"' + $headerHash + '"}]'))
+$update = [TokenBotsResource]::BeginUpdateResource($exe,$false)
+if ($update -eq [IntPtr]::Zero) { throw 'Could not update custom archive metadata.' }
+$complete = $false
+try {
+    foreach ($language in $languages) {
+        if (-not [TokenBotsResource]::UpdateResource($update,'INTEGRITY','ELECTRONASAR',$language,$metadata,$metadata.Length)) { throw 'Custom archive metadata write failed.' }
+    }
+    $complete = $true
+} finally {
+    if (-not [TokenBotsResource]::EndUpdateResource($update,(-not $complete))) { throw 'Custom archive metadata commit failed.' }
+}
 $owlConfig = Join-Path $appDir 'resources\owl-app.ini'
 if (Test-Path -LiteralPath $owlConfig) {
     $owlText = [IO.File]::ReadAllText($owlConfig)
