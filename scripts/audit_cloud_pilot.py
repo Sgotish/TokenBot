@@ -58,6 +58,9 @@ def main():
         'realtime_monitoring_enabled': settings.get('ops_realtime_monitoring_enabled') is True and available.get('enabled') is True and concurrency.get('enabled') is True,
         'db_and_redis_healthy': overview.get('system_metrics', {}).get('db_ok') is True and overview.get('system_metrics', {}).get('redis_ok') is True,
         'usage_collector_fresh': usage.get('snapshot_stale') is False,
+        'upstream_quota_fresh': len(usage.get('accounts', [])) == 2 and all(
+            a.get('source') == 'quota_api' and a.get('snapshot_stale') is False and not a.get('refresh_error')
+            for a in usage.get('accounts', [])),
         'log_ingestion_healthy': logs.get('dropped_count') == 0 and logs.get('write_failed_count') == 0,
     }
     report = {
@@ -67,7 +70,7 @@ def main():
         'selected_pool': usage.get('selected_pool'),
         'last_hour': {k: overview.get(k) for k in ('request_count_total','success_count','error_count_total','upstream_429_count','token_consumed','duration','ttft')},
         'cumulative_requests': stats.get('total_requests'),
-        'limits': ['Read-only readiness, not a model execution or load test.', 'Fresh collector does not imply fresh upstream quota windows.'],
+        'limits': ['Read-only readiness, not a model execution or load test.', 'A missing upstream quota window is unknown, not unlimited.'],
     }
     print(json.dumps(report, ensure_ascii=False, indent=2))
     return 0 if all(checks.values()) else 1

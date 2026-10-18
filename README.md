@@ -8,7 +8,8 @@
 
 - `deploy/compose.yaml`：独立 PostgreSQL + Redis + Sub2API；仅监听本机回环地址。
 - [两账号云端测试](docs/cloud-test.md)：现有 1 GB 服务器上的免平台计费试点、备份与私有 Windows 交付。
-- 搭档用量页 `/portal`：选择自动 / Plus / Pro，查看上游剩余窗口、快照时间和实际调用账号；Windows 包附带独立快捷入口（非 Codex 原生菜单改造）。
+- 搭档用量页 `/portal`：选择自动 / Plus / Pro，查看上游剩余窗口、更新时间和实际调用账号；服务器每分钟主动查询额度。
+- [Windows 原生菜单](docs/windows-native-menu.md)：保留官方安装，另建定制测试副本，菜单内显示用量并每 30 秒检查；私有安装包由运营者交付。
 - `scripts/local_runtime.py`：macOS ARM 本地启动/停止，不注册开机服务。
 - `tokenbot/`：持久化异步任务队列、原生 Batch 提交与状态查询、缓存统计和成本计算。
 - [选型与范围](docs/architecture.md)、[部署运维](docs/operations.md)、[客户接入](docs/client-guide.md)、[人工验收](docs/acceptance.md)、[成本规则](docs/costs.md)。
@@ -62,5 +63,5 @@ python3 -m unittest discover -s tests -v
 
 - 真实密钥、客户资料、会议原文、报价、任务输入输出和运行报告均不提交到公开仓库。
 - 模型 ID 从目标实例 `/v1/models` 及实际调用确认；不把工具产品名当成已购买的模型权限。
-- 独立测试环境不连接旧生产库、不更改旧网站 DNS、不导入旧站管理员会话。
+- 独立测试环境不连接旧生产库；自有子域名 `pilot.tokenbots.top` 指向云端试点，原主站及邮件解析保持不变，不导入旧站管理员会话。
 - `upstream.lock.json` 固定依赖版本和来源；未修改或复制上游应用源码。上游项目许可证及界面署名保留，见 [THIRD_PARTY.md](THIRD_PARTY.md)。

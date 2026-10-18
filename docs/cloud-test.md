@@ -9,11 +9,11 @@
 - 迁移前的 Key 在云端全部停用；新搭档普通用户仅授权测试组，新 Key 无消费上限、无 5 小时/日/周额度、无自动到期时间。
 - 并发上限为 2，属于小服务器容量保护。上游订阅限制、模型权限和可用性仍然有效，不能承诺无限调用。
 - `tokenbot-bridge.service` 以独立非 root 用户运行，公开模型接口和受保护的搭档用量页；API 必须带搭档 Key，用量页使用同一 Key 换取安全会话，管理接口不暴露。后台仅通过 SSH 转发访问。
-- 公开入口使用 Caddy 自动 HTTPS，直接连接云服务器；测试域名使用 sslip.io 公共 DNS，搭档无需安装 Tailscale。Mac 旧服务停止后，云端继续独立运行。云服务器或 DNS 故障仍会中断访问。
+- 公开入口使用 Caddy 自动 HTTPS，直接连接云服务器；当前入口使用自有子域名 `pilot.tokenbots.top`，旧 sslip.io 地址保留兼容，搭档无需安装 Tailscale。Mac 旧服务停止后，云端继续独立运行。云服务器或 DNS 故障仍会中断访问。
 
 ## HTTPS 入口
 
-安装 Ubuntu 的 Caddy 软件包，将 `deploy/Caddyfile.cloud-test` 放在 `/etc/caddy/Caddyfile`。在 Caddy systemd drop-in 中设置 `TOKENBOT_PUBLIC_HOST` 和 `TOKENBOT_PUBLIC_IP`，分别为指向服务器的域名和服务器公网接口地址。此测试使用可解析到公网 IPv4 的 sslip.io 域名；无需购买域名，但它仍是外部 DNS 依赖。开放 80/443，Caddy 自动申请与续签证书，并将请求转发至 127.0.0.1:8181。仅代理 API bridge，不能改为直接公开后台 8180。
+安装 Ubuntu 的 Caddy 软件包，将 `deploy/Caddyfile.cloud-test` 放在 `/etc/caddy/Caddyfile`。在 Caddy systemd drop-in 中设置 `TOKENBOT_PUBLIC_HOST` 和 `TOKENBOT_PUBLIC_IP`，分别为指向服务器的域名和服务器公网接口地址。当前配置同时服务 `pilot.tokenbots.top` 和原 sslip.io 域名；两个主机名均指向现有云实例。迁移时须将两个精确 HTTPS origin 写入桥接的 `allowed_origins`，不得使用通配符或关闭来源检查。开放 80/443，Caddy 自动申请与续签证书，并将请求转发至 127.0.0.1:8181。仅代理 API bridge，不能改为直接公开后台 8180。
 
 已停用此次未完成公网解析的 Funnel 入口；现有 Tailscale 远程管理连接保留。
 
@@ -23,7 +23,7 @@
 
 - 自动组只关联两个测试账号；Plus 专属只关联 Plus，Pro 专属只关联 Pro，专属组不设置回退。每个组使用独立内部 Key，外部搭档 Key 保持不变。
 - 选择作用于该搭档 Key 的全部后续请求，保存在 `/var/lib/tokenbot-bridge/selection.json`。正在调用时拒绝切换；切换后在 Codex 新建对话，避免跨账号沿用上游会话。
-- `tokenbot-usage.timer` 每分钟调用本机后台读取已有响应头和日志，导出脱敏快照；不定时发送收费模型探测。网页每 30 秒刷新。缺失或已结束窗口显示未知，超过 15 分钟的上游快照标为历史数据。
+- `tokenbot-usage.timer` 每分钟调用本机后台 `POST /admin/openai/accounts/:id/quota/refresh`，读取上游 `/wham/usage`，同时收集调用日志，导出脱敏快照。此操作不生成模型内容，也不是兑换额度重置券。上游 429 后退避五分钟；查询失败保留历史数据并明确标旧。网页与原生菜单每 30 秒检查，展示检查时间及上游更新时间。缺失或已结束窗口显示未知，超过 15 分钟的上游快照标为历史数据。
 - 当前 Pro 上游仅返回周窗口，不能据此编造 5 小时额度。百分比由上游返回的已用比例计算，可能经过上游取整。
 - 配套网页继续可用。另已完成 Windows 定制副本的原生用量菜单，原版安装保持不变；详情见 [原生菜单验收](windows-native-menu.md)。
 

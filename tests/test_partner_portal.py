@@ -66,6 +66,16 @@ def test_quota_does_not_invent_missing_or_expired_windows():
     assert account_view(a,'Pro',now)['windows'][1]['remaining_percent'] is None
 
 
+def test_domain_migration_accepts_only_explicit_https_origins(tmp_path):
+    cfg = config(tmp_path)
+    cfg['allowed_origins'] = ['https://legacy.test']
+    with TestClient(create_app(cfg), base_url='https://partner.test') as client:
+        for origin in ['https://partner.test', 'https://legacy.test']:
+            assert client.post('/portal/api/login', headers={'origin': origin}, json={'key': cfg['key']}).status_code == 200
+        for origin in ['https://evil.test', 'https://legacy.test.evil.test', 'http://legacy.test', 'null']:
+            assert client.post('/portal/api/login', headers={'origin': origin}, json={'key': cfg['key']}).status_code == 403
+
+
 def test_records_only_export_usage_fields():
     r={'account_id':1,'group_id':5,'input_tokens':10,'output_tokens':2,'cache_read_tokens':5,'user':{'email':'private'},'api_key':{'key':'secret'},'request_id':'internal','ip_address':'private'}
     out=record_view(r,{'1':'Pro'}, {'5':'Pro only'})

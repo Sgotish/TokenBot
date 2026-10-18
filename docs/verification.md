@@ -80,3 +80,17 @@ docker compose --env-file .env -f deploy/compose.yaml config --quiet
 运行截图、数据库备份和测试报告保存在被 Git 忽略的本地目录。不要把管理凭据、客户输入输出或原始会议资料加入公开仓库。
 
 访问检查的首轮失败原因已查明：通用用户编辑接口不会修改余额。脚本现使用专用余额调整接口，并读回确认；修正后该轮所有检查通过。这是测试接入方法修正，没有修改上游账本源码。
+
+## 2026-10-18：修复用量停更、稳定入口和编辑交接
+
+- 根因：原采集器只读已有调用响应头；页面定时轮询并不会更新上游额度。现改为每分钟主动查询上游额度接口（不生成内容、不兑换重置券）。失败标旧并退避；Pro 上游只提供周窗口时，明确说明 5 小时窗口未提供。
+- 已部署至现有 DigitalOcean 测试实例。真实上游时间从 13:57:14/15 UTC 自动推进至 13:59:24/25 UTC；同步记录从 19 增至 21，新增 Plus/Pro 调用分别归属正确账号。13 项云端检查全部通过。
+- 原生客户端实机测试：[Windows run 39133370992](https://github.com/Sgotish/TokenBot/actions/runs/39133370992)。打开菜单、切换 Pro 后保持菜单打开，35 秒后从 81% 自动变成 80%，不重新打开菜单。此项用固定夹具控制数值，真实账号额度另由云端检查验证。
+- 稳定性修复：保留会话亲和头、请求跟踪头和上游 Retry-After；桥接并发保护给出 Retry-After 和明确来源，不自动重放生成请求。
+- 新入口 `https://pilot.tokenbots.top/portal`；模型 base URL `https://pilot.tokenbots.top/v1`。旧 sslip.io 入口继续服务，两个精确 HTTPS 来源均校验。主域名原站和邮件解析未改变。
+- 新入口真实流式调用：Plus 2.92 秒、Pro 2.23 秒，均 HTTP 200 且 `response.completed`。测试后恢复原先 Pro 选择；不是压力测试。
+- [Globalping 测量](https://globalping.io/?measurement=2TTMTzsrrcdhy8x0Y00021L7d)：广州腾讯、上海联通、武汉联通的 HTTPS GET `/portal` 均 200，约 1.10–1.38 秒。未把接入 Key 提供给探针。这只是三处网络的页面连通验证，不代表所有国内运营商或长流稳定性验收。
+- 经用户明确授权，已给指定搭档发出 DigitalOcean Member 邀请（待对方接受），建立独立 SSH 管理用户和 Sub2API admin。SSH sudo、固定主机公钥验证、隧道及管理员登录已验证。后台首次运营协议须该管理员本人阅读确认，没有代签。私有交接包不进入 Git。
+- 仓库仍为 `Sgotish/TokenBot`，Sgotish 是管理员/所有者；当前维护者 sujunming0315 是 write。邮箱不是 GitHub 登录名，未虚构邮箱与 GitHub 账号映射。
+
+余项：搭档安装本次客户端包并复测实际任务、接受云资源邀请和后台首次协议；新增 Pro 需账号持有人授权。1–2 周客户实测及商业上线验收未完成，教学视频按用户要求排除。

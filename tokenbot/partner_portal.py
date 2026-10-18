@@ -5,6 +5,7 @@ import json
 import secrets
 import time
 from pathlib import Path
+from urllib.parse import urlsplit
 
 from fastapi import Request
 from fastapi.responses import FileResponse, JSONResponse
@@ -52,10 +53,14 @@ class PoolState:
 def install_portal(app, config, state):
     sessions = {}
     failures = []
-    origin = config['public_origin'].rstrip('/')
+    origins = {config['public_origin'].rstrip('/'), *config.get('allowed_origins', [])}
+    for origin in origins:
+        parsed = urlsplit(origin)
+        if parsed.scheme != 'https' or not parsed.netloc or parsed.username or parsed.password or parsed.path or parsed.query or parsed.fragment:
+            raise ValueError('Portal origins must be exact HTTPS origins')
 
     def same_origin(request):
-        return request.headers.get('origin') == origin
+        return request.headers.get('origin') in origins
 
     def authorized(request):
         if config['expires_at'] is not None and time.time() >= config['expires_at']:
