@@ -1,15 +1,22 @@
 param([string]$ArchivePath, [switch]$PrepareOnly)
 $ErrorActionPreference = 'Stop'
+$ProgressPreference = 'SilentlyContinue'
 $version = '26.1013.4894.0'
-$releaseHash = 'e2d892e6c22310e4b1a2928b0d3a29a066e0863d3a333754d6585c77cdafbe7f'
-if ($env:PROCESSOR_ARCHITECTURE -ne 'AMD64') { throw 'This build supports Windows x64. No installed application was changed.' }
+$architecture = if ($env:PROCESSOR_ARCHITEW6432) { $env:PROCESSOR_ARCHITEW6432 } else { $env:PROCESSOR_ARCHITECTURE }
+if ($architecture -eq 'AMD64') {
+    $targetArch = 'x64'
+    $releaseHash = 'e2d892e6c22310e4b1a2928b0d3a29a066e0863d3a333754d6585c77cdafbe7f'
+} elseif ($architecture -eq 'ARM64') {
+    $targetArch = 'arm64'
+    $releaseHash = 'bff7e61e8e7b5cf3b6a85d9cd60933160625162f1c148672bd93bb467fbd0888'
+} else { throw 'This build requires Windows x64 or ARM64. No installed app was changed.' }
 $base = Join-Path $env:LOCALAPPDATA 'TokenBots\Codex-native'
 New-Item -ItemType Directory -Force -Path $base | Out-Null
-$download = Join-Path $base 'ChatGPT-latest-x64.msix'
+$download = Join-Path $base ('ChatGPT-latest-' + $targetArch + '.msix')
 if (-not $ArchivePath) {
     [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
     Write-Host 'Downloading official desktop package (about 1 GB)...'
-    Invoke-WebRequest -UseBasicParsing -Uri 'https://persistent.oaistatic.com/codex-app-prod/ChatGPT-x64.msix' -OutFile $download
+    Invoke-WebRequest -UseBasicParsing -Uri ('https://persistent.oaistatic.com/codex-app-prod/ChatGPT-' + $targetArch + '.msix') -OutFile $download
     $ArchivePath = $download
 }
 if ((Get-FileHash -LiteralPath $ArchivePath -Algorithm SHA256).Hash.ToLowerInvariant() -ne $releaseHash) {

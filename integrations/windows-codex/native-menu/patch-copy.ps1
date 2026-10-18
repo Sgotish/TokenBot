@@ -94,4 +94,11 @@ try {
 Move-Item -LiteralPath $asar -Destination $backup
 try { Move-Item -LiteralPath ($asar + '.new') -Destination $asar }
 catch { Move-Item -LiteralPath $backup -Destination $asar; throw }
+$owlConfig = Join-Path $appDir 'resources\owl-app.ini'
+if (Test-Path -LiteralPath $owlConfig) {
+    $owlText = [IO.File]::ReadAllText($owlConfig)
+    if ($owlText -notmatch '(?m)^UserDataDirectoryName=Codex\r?$') { throw 'Unexpected runtime profile name.' }
+    Copy-Item -LiteralPath $owlConfig -Destination ($owlConfig + '.tokenbots-original')
+    [IO.File]::WriteAllText($owlConfig, [regex]::Replace($owlText,'(?m)^UserDataDirectoryName=Codex\r?$', 'UserDataDirectoryName=TokenBotsCodex'), [Text.Encoding]::ASCII)
+}
 Write-Host 'Patched isolated TokenBots copy. Official installation unchanged.'

@@ -20,6 +20,7 @@ jobs:
           python-version: ${{ matrix.python }}
       - run: python -m pip install -r integrations/windows-codex/gateway-requirements.txt "pytest>=8,<10"
       - run: python -m pytest -q tests
+      - run: node --test tests/native-backend.test.cjs
       - run: python scripts/init_env.py --admin-email admin@example.com
       - run: docker compose --env-file .env -f deploy/compose.yaml config --quiet
       - run: docker compose --env-file .env -f deploy/compose.yaml -f deploy/cloud-test.override.yaml config --quiet

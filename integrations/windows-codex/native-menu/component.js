@@ -34,7 +34,7 @@ function TokenBotsNativeUsage() {
     const minimum = Math.min(...fresh.map(w => Math.max(0, Math.min(100, w.remaining_percent))));
     return `${minimum}%${fresh.length < windows.length ? '（部分窗口）' : ''}`;
   };
-  const accounts = (status?.accounts || []).filter(a => status.selected_pool === 'auto' || a.label.toLowerCase() === status.selected_pool);
+  const accounts = (status?.accounts || []).filter(a => status.selected_pool === 'auto' || a.label.toLowerCase().split(/[ ·]/)[0] === status.selected_pool);
   const summary = error || (!status ? '读取中…' : accounts.map(a => `${a.label} ${accountPercent(a)}`).join(' · ') || '未知');
   const select = async pool => {
     if (busy) return;
