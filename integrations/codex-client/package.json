@@ -1,0 +1,13 @@
+{
+  "name": "tokenbots-codex-setup",
+  "version": "1.0.0",
+  "private": true,
+  "type": "commonjs",
+  "engines": {"node": ">=20"},
+  "scripts": {
+    "build": "esbuild client.cjs --bundle --platform=node --target=node20 --outfile=dist/tokenbots.cjs",
+    "test": "node --test test.cjs"
+  },
+  "dependencies": {"smol-toml": "1.9.1"},
+  "devDependencies": {"esbuild": "0.25.12"}
+}
