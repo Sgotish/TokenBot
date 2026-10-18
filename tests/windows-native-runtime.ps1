@@ -15,6 +15,8 @@ experimental_bearer_token = "fixture-only-not-a-real-key"
 requires_openai_auth = false
 '@ | Set-Content -Encoding ASCII (Join-Path $env:CODEX_HOME 'config.toml')
 '{"OPENAI_API_KEY":"fixture-only-not-a-real-key"}' | Set-Content -Encoding ASCII (Join-Path $env:CODEX_HOME 'auth.json')
+# Model an existing desktop user in this disposable test profile.
+'{"electron-persisted-atom-state":{"electron:onboarding-projectless-completed":true}}' | Set-Content -Encoding ASCII (Join-Path $env:CODEX_HOME '.codex-global-state.json')
 '{"origin":"http://127.0.0.1:18791","key":"fixture-only-not-a-real-key","testOnlyLocalOrigin":true}' | Set-Content -Encoding ASCII (Join-Path $appDir 'resources\tokenbots-native.json')
 $fixture = Start-Process python -ArgumentList 'tests/native_fixture_server.py' -PassThru
 $app = Start-Process (Join-Path $appDir 'ChatGPT.exe') -ArgumentList '--force-renderer-accessibility' -WorkingDirectory $appDir -RedirectStandardOutput (Join-Path $PWD 'reports\native-stdout.txt') -RedirectStandardError (Join-Path $PWD 'reports\native-stderr.txt') -PassThru
@@ -37,6 +39,8 @@ if (Invoke-Visible 'Engineering') {
     $null = Invoke-Visible 'Continue'
     Start-Sleep -Seconds 8
 }
+$opened = Invoke-Visible 'Open profile menu'
+if ($opened) { Start-Sleep -Seconds 5 }
 New-Item -ItemType Directory -Force reports | Out-Null
 Add-Type -AssemblyName System.Drawing, System.Windows.Forms
 $bounds = [Windows.Forms.Screen]::PrimaryScreen.Bounds
@@ -51,4 +55,5 @@ $names = @(); foreach ($element in $all) { try { if ($element.Current.Name) { $n
 $names | Set-Content -Encoding UTF8 reports/native-ui.txt
 Get-Process ChatGPT,Codex -ErrorAction SilentlyContinue | Select-Object ProcessName,Id,MainWindowTitle | Format-Table
 if (-not (Get-Process ChatGPT -ErrorAction SilentlyContinue)) { throw 'Custom client did not stay running. See logs and screenshot.' }
-# Launch alone is not menu acceptance; retain artifacts for the next UI step.
+if (-not $opened) { throw 'Native profile menu was not reachable.' }
+if (-not ($names -match '94%')) { throw 'Real native menu did not show fixture remaining usage.' }
