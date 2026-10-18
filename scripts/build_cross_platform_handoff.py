@@ -34,11 +34,16 @@ with zipfile.ZipFile(output,'w',zipfile.ZIP_DEFLATED) as z:
     z.writestr(prefix+'access.json',json.dumps(access,ensure_ascii=False,indent=2))
     z.write(ROOT/'docs/cross-platform.md',prefix+'README.md')
     z.write(source/'node_modules/smol-toml/LICENSE',prefix+'THIRD-PARTY-LICENSE.txt')
-    z.writestr(prefix+'tokenbots.sh','#!/bin/sh\nexec node "$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)/tokenbots.cjs" "$@"\n')
+    def executable(name, content):
+        info = zipfile.ZipInfo(prefix+name)
+        info.create_system = 3
+        info.external_attr = 0o100700 << 16
+        z.writestr(info, content)
+    executable('tokenbots.sh','#!/bin/sh\nexec node "$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)/tokenbots.cjs" "$@"\n')
     z.writestr(prefix+'tokenbots.cmd','@echo off\r\nnode "%~dp0tokenbots.cjs" %*\r\n')
     for target in ('cli','desktop'):
         z.writestr(prefix+f'setup-{target}.cmd',f'@echo off\r\nnode "%~dp0tokenbots.cjs" setup --target {target} --access "%~dp0access.json"\r\npause\r\n')
-        z.writestr(prefix+f'setup-{target}.command',f'#!/bin/sh\ncd -- "$(dirname -- "$0")" || exit 1\nnode ./tokenbots.cjs setup --target {target} --access ./access.json\nread -r unused\n')
+        executable(f'setup-{target}.command',f'#!/bin/sh\ncd -- "$(dirname -- "$0")" || exit 1\nnode ./tokenbots.cjs setup --target {target} --access ./access.json\nread -r unused\n')
     z.writestr(prefix+'start-cli.cmd','@echo off\r\nnode "%~dp0tokenbots.cjs" run\r\npause\r\n')
 output.chmod(0o600)
 print(f'Private cross-platform package created: {output.name}. No credentials printed.')
