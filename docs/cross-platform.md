@@ -81,3 +81,10 @@ probe 会用 gpt-6.1-sol / low 实际提问，只有返回 42 且收到完成事
 跨平台 CI 验证配置、更新、回退、中文/空格路径以及真实 Codex CLI 对本地模拟 Responses 流的消费；这不等于云端真实推理或桌面 UI 验证。云端推理与各桌面原生菜单需要分别实测。
 官方配置说明：https://learn.chatgpt.com/docs/config-file/config-advanced
 官方 CLI：https://learn.chatgpt.com/docs/codex/cli
+
+
+## 模型与推理强度（2026-10-18）
+
+现在可在 Codex 原生选择器或 CLI `--model` 中选择 GPT-6.1 Sol、GPT-6 Astra、GPT-6 Sol、GPT-6 Luna、GPT-5.6 Sol、GPT-5.6 Terra、GPT-5.6 Luna。安装时保留已有的有效模型与推理强度；没有有效选择时使用 Astra / high。`probe` 仍固定用 Sol / low 做低消耗连通检查，不代表你的日常模型被切换。
+
+CLI 示例：`./tokenbots.sh run -- --model gpt-6-astra -c 'model_reasoning_effort="high"'`。Windows 使用 `tokenbots.cmd`。模型与推理参数原样转发，不把 Astra 静默替换成 Sol。可用强度依模型和客户端能力显示；Ultra 是 Codex 的客户端工作模式，实测当前客户端将上游强度设为 xhigh，不能把 raw API 的 effort 直接写成 ultra。

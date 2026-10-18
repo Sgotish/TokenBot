@@ -125,3 +125,15 @@ test('actual CLI translates Ultra client mode before sending the upstream reques
  assert(['max','xhigh'].includes(sent.body.reasoning.effort));
  console.log('Ultra upstream effort:',sent.body.reasoning.effort);
 });
+test('each model can be selected by actual CLI without model or effort fallback',{skip:process.env.RUN_CODEX_SMOKE!=='1',timeout:90000},async t=>{
+ const f=await fixture(t);await client.configure(f);const bin=client.resolveCodex(process.env.TOKENBOTS_TEST_CODEX);
+ for(const model of require('../model-catalog/models.json').models){
+  const first=f.requests.length;
+  const proc=cp.spawn(bin.command,[...bin.args,'exec','--skip-git-repo-check','--ephemeral','--sandbox','read-only','-m',model.id,'-c','model_reasoning_effort="high"','Reply only 42. Do not use tools.'],{cwd:f.home,env:{...process.env,CODEX_HOME:f.home,TOKENBOTS_API_KEY:key},stdio:['ignore','pipe','pipe']});
+  let err='';proc.stdout.resume();proc.stderr.on('data',b=>err+=b);t.after(()=>proc.kill());
+  const code=await new Promise((r,j)=>{proc.on('error',j);proc.on('close',r);});assert.equal(code,0,err.replaceAll(key,'[redacted]'));
+  const sent=f.requests.slice(first).find(r=>r.path.includes('/responses'));assert(sent,model.id);
+  assert.equal(sent.body.model,model.id);assert.equal(sent.body.reasoning.effort,'high');
+  assert([undefined,'auto','default'].includes(sent.body.service_tier),model.id+':'+sent.body.service_tier);
+ }
+});

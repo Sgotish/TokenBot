@@ -95,12 +95,33 @@ if (-not ($refreshed -match 'Pro 80%')) { throw 'Open native menu did not refres
 $null = Invoke-Visible 'Open profile menu'
 Start-Sleep -Seconds 1
 $composer = Save-NativeEvidence 'composer'
-$control = $composer | Where-Object { $_ -match 'Open and adjust reasoning effort|Select model|Select reasoning effort' } | Select-Object -First 1
-if ($control) { $null = Invoke-Visible $control; Start-Sleep -Seconds 2 }
+
+if (-not (Invoke-Visible 'Select effort')) { throw 'Native effort control unavailable.' }
+Start-Sleep -Seconds 2
 $picker = Save-NativeEvidence 'model-control'
-$modelButton = $picker | Where-Object { $_ -match '6\.1.?Sol|6\.1 Sol' } | Select-Object -First 1
-if ($modelButton) { $null = Invoke-Visible $modelButton; Start-Sleep -Seconds 2 }
+if (-not (Invoke-Visible 'Select model')) { throw 'Native model selector unavailable.' }
+Start-Sleep -Seconds 2
 $modelNames = Save-NativeEvidence 'models'
 foreach ($model in @('6.1','Astra','6 Sol','6 Luna','5.6 Sol','Terra','5.6 Luna')) {
   if (-not ($modelNames | Where-Object { $_.Replace('-',' ').Contains($model) })) { throw ('Model picker missing ' + $model) }
 }
+$astra = $modelNames | Where-Object { $_ -match 'Astra' } | Select-Object -First 1
+if (-not (Invoke-Visible $astra)) { throw 'Cannot select Astra from the native menu.' }
+Start-Sleep -Seconds 2
+$astraNames = Save-NativeEvidence 'astra-selected'
+$condition = New-Object Windows.Automation.PropertyCondition([Windows.Automation.AutomationElement]::ControlTypeProperty, [Windows.Automation.ControlType]::Slider)
+$sliders = [Windows.Automation.AutomationElement]::RootElement.FindAll([Windows.Automation.TreeScope]::Descendants,$condition)
+$changed = $false
+foreach ($slider in $sliders) {
+  if ($slider.Current.IsOffscreen) { continue }
+  $range = $null
+  if ($slider.TryGetCurrentPattern([Windows.Automation.RangeValuePattern]::Pattern,[ref]$range)) {
+    $range.SetValue($range.Current.Maximum)
+    $changed = $true
+    break
+  }
+}
+if (-not $changed) { throw 'Native reasoning slider could not be adjusted.' }
+Start-Sleep -Seconds 2
+$effortNames = Save-NativeEvidence 'astra-max-effort'
+if (-not ($effortNames -match 'Astra')) { throw 'Astra selection did not persist after effort change.' }

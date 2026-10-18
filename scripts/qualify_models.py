@@ -40,7 +40,8 @@ def main():
                  'reasoning_returned':(done or {}).get('reasoning'),'http':status,'text':text[:100],
                  'completed':(done or {}).get('status')=='completed','seconds':round(time.monotonic()-start,3),
                  'error':failure,'usage':(done or {}).get('usage')}
-            row['pass']=status==200 and row['completed'] and text.strip()=='42' and failure is None
+            row['pass']=(status==200 and row['completed'] and text.strip()=='42' and failure is None
+                         and row['model_returned']==model and (row['reasoning_returned'] or {}).get('effort')==effort)
             out.write(json.dumps(row)+'\n');out.flush();print(json.dumps({k:v for k,v in row.items() if k!='usage'}),flush=True)
             if not row['pass']:raise SystemExit('Stopped on first failure; no automatic retry.')
 
