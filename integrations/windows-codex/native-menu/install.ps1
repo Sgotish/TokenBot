@@ -16,7 +16,11 @@ $download = Join-Path $base ('ChatGPT-latest-' + $targetArch + '.msix')
 if (-not $ArchivePath) {
     [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
     Write-Host 'Downloading official desktop package (about 1 GB)...'
-    Invoke-WebRequest -UseBasicParsing -Uri ('https://persistent.oaistatic.com/codex-app-prod/ChatGPT-' + $targetArch + '.msix') -OutFile $download
+    $url = 'https://persistent.oaistatic.com/codex-app-prod/ChatGPT-' + $targetArch + '.msix'
+    if (Get-Command curl.exe -ErrorAction SilentlyContinue) {
+        & curl.exe --fail --location --silent --show-error --retry 2 --max-time 240 $url -o $download
+        if ($LASTEXITCODE -ne 0) { throw 'Official package download failed.' }
+    } else { Invoke-WebRequest -UseBasicParsing -Uri $url -OutFile $download }
     $ArchivePath = $download
 }
 if ((Get-FileHash -LiteralPath $ArchivePath -Algorithm SHA256).Hash.ToLowerInvariant() -ne $releaseHash) {
@@ -25,6 +29,7 @@ if ((Get-FileHash -LiteralPath $ArchivePath -Algorithm SHA256).Hash.ToLowerInvar
 $destination = Join-Path $base ($version + '-' + (Get-Date -Format 'yyyyMMdd-HHmmss'))
 Add-Type -AssemblyName System.IO.Compression.FileSystem
 [IO.Compression.ZipFile]::ExtractToDirectory((Resolve-Path -LiteralPath $ArchivePath).Path, $destination)
+Write-Host 'Official package extracted.'
 $appDir = Join-Path $destination 'app'
 New-Item -ItemType File -Path (Join-Path $appDir '.tokenbots-custom-copy') | Out-Null
 & (Join-Path $PSScriptRoot 'patch-copy.ps1') -AppDirectory $appDir

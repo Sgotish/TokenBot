@@ -1,5 +1,6 @@
 param([Parameter(Mandatory=$true)][string]$AppDirectory)
 $ErrorActionPreference = 'Stop'
+New-Item -ItemType Directory -Force reports | Out-Null
 $appDir = (Resolve-Path $AppDirectory).Path
 $env:CODEX_HOME = Join-Path $env:RUNNER_TEMP 'tokenbots-codex-home'
 New-Item -ItemType Directory -Force $env:CODEX_HOME | Out-Null
@@ -16,7 +17,7 @@ requires_openai_auth = false
 '{"OPENAI_API_KEY":"fixture-only-not-a-real-key"}' | Set-Content -Encoding UTF8 (Join-Path $env:CODEX_HOME 'auth.json')
 '{"origin":"http://127.0.0.1:18791","key":"fixture-only-not-a-real-key","testOnlyLocalOrigin":true}' | Set-Content -Encoding ASCII (Join-Path $appDir 'resources\tokenbots-native.json')
 $fixture = Start-Process python -ArgumentList 'tests/native_fixture_server.py' -PassThru
-$app = Start-Process (Join-Path $appDir 'ChatGPT.exe') -ArgumentList '--force-renderer-accessibility' -WorkingDirectory $appDir -PassThru
+$app = Start-Process (Join-Path $appDir 'ChatGPT.exe') -ArgumentList '--force-renderer-accessibility' -WorkingDirectory $appDir -RedirectStandardOutput (Join-Path $PWD 'reports\native-stdout.txt') -RedirectStandardError (Join-Path $PWD 'reports\native-stderr.txt') -PassThru
 Start-Sleep -Seconds 35
 New-Item -ItemType Directory -Force reports | Out-Null
 Add-Type -AssemblyName System.Drawing, System.Windows.Forms

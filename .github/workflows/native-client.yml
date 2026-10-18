@@ -9,12 +9,20 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.13'
-      - name: Prepare isolated latest client and launch
+      - name: Download official release
         shell: powershell
         run: |
-          $output = & ./integrations/windows-codex/native-menu/install.ps1 -PrepareOnly
+          curl.exe --fail --location --silent --show-error --max-time 240 https://persistent.oaistatic.com/codex-app-prod/ChatGPT-x64.msix -o "$env:RUNNER_TEMP\ChatGPT.msix"
+          if ($LASTEXITCODE -ne 0) { throw 'Download failed' }
+      - name: Prepare isolated latest client
+        shell: powershell
+        run: |
+          $output = & ./integrations/windows-codex/native-menu/install.ps1 -PrepareOnly -ArchivePath "$env:RUNNER_TEMP\ChatGPT.msix"
           $appDirectory = $output[-1]
-          & ./tests/windows-native-runtime.ps1 -AppDirectory $appDirectory
+          "TB_APP_DIR=$appDirectory" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+      - name: Launch actual Windows application
+        shell: powershell
+        run: ./tests/windows-native-runtime.ps1 -AppDirectory $env:TB_APP_DIR
       - name: Save diagnostics
         if: always()
         uses: actions/upload-artifact@v4
