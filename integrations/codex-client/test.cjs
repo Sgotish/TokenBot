@@ -21,7 +21,10 @@ async function fixture(t){
  });
  await new Promise(r=>server.listen(0,'127.0.0.1',r));t.after(()=>server.close());
  const origin='http://127.0.0.1:'+server.address().port;
- const home=fs.mkdtempSync(path.join(os.tmpdir(),'TokenBots space 测试-'));t.after(()=>fs.rmSync(home,{recursive:true,force:true}));
+ const home=fs.mkdtempSync(path.join(os.tmpdir(),'TokenBots space 测试-'));
+ // Windows may retain handles briefly after the npm wrapper exits. Await all
+ // child stdio below, then retry cleanup for a bounded period; never hide errors.
+ t.after(()=>fs.promises.rm(home,{recursive:true,force:true,maxRetries:20,retryDelay:100}));
  return {home,requests,access:{public_origin:origin,base_url:origin+'/v1',key},target:'cli',localTest:true};
 }
 test('configure, update and rollback preserve unrelated config and original bytes',async t=>{
@@ -77,7 +80,7 @@ test('real installed Codex CLI consumes generated config and completes a streame
  const args=[...bin.args,'exec','--skip-git-repo-check','--ephemeral','--sandbox','read-only','-c','model_reasoning_effort="low"','--output-last-message',out,'Reply with 42 only. Do not use tools.'];
  let stderr='';const proc=cp.spawn(bin.command,args,{cwd:f.home,env:{...process.env,CODEX_HOME:f.home,TOKENBOTS_API_KEY:key},stdio:['ignore','pipe','pipe']});
  proc.stdout.resume();proc.stderr.on('data',b=>stderr+=b);t.after(()=>proc.kill());
- const code=await new Promise((resolve,reject)=>{proc.on('error',reject);proc.on('exit',resolve);});
+ const code=await new Promise((resolve,reject)=>{proc.on('error',reject);proc.on('close',resolve);});
  assert.equal(code,0,stderr.replaceAll(key,'[redacted]'));assert.equal(fs.readFileSync(out,'utf8').trim(),'42');
  assert.ok(f.requests.some(r=>r.path.includes('/responses')&&r.auth==='Bearer '+key));
 });
