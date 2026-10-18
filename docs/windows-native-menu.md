@@ -2,11 +2,23 @@
 
 核查日期：2026-10-17。目标是在桌面应用头像菜单显示 TokenBots 号池用量。
 
-## 目前结论
+## 当前实现
 
-不需要搭档提供安装来源或版本才能继续研究。运营者可以直接下载当前官方包。已检查最新 x64 包；未检查 Arm64 实际二进制，也没有在 Windows 中运行修改版客户端。
+已实现 **TokenBots 定制客户端副本** 内的头像菜单用量项。Windows x64 实际应用启动、展开账号菜单、显示“使用情况 / Plus 94%”、展开窗口详情及切换 Pro 后显示 81% 均已通过[运行验收](https://github.com/Sgotish/TokenBot/actions/runs/39085693786)。截图和 UI Automation 文本在该运行的 artifact 中；94% 是隔离测试数据，不是客户真实额度。
 
-原生菜单尚未实现。已有网页用量、Plus / Pro / 自动路由不是本目标的验收证据。没有可交付的通用原生菜单补丁。
+这不是修改原有 Store 安装。安装器直接下载已核对的官方包，在用户目录创建独立副本，因此不需要搭档确认原安装来源。两种架构的发行包和 JS 模块均已检查；x64 已实际运行，ARM64 尚未做硬件运行验收。
+
+真实云端用量接口已通过同一 main-process bridge 取得 HTTP 200；Plus / Pro 各一次真实 Responses 请求均完成，已恢复原来的自动路由。真实数据和 UI 测试数据分开验证，避免把接入 Key 放进公开 CI。上游未返回的窗口显示未知，15 分钟前的记录显示待更新。
+
+## 实现与交付
+
+- `integrations/windows-codex/native-menu/component.js`：原生菜单组件，30 秒刷新，展开订阅窗口和重置时间，选择自动 / Plus / Pro。
+- `backend.cjs`：主进程读取本机私有配置，转发用量和号池选择；renderer 不接触 Key。限制来源、路径、重定向及池值。
+- `patch-copy.ps1`：仅修改带定制副本标记的目录；核对版本和原资源 SHA，更新 ASAR 条目与 Windows `INTEGRITY/ELECTRONASAR` 资源中的 header SHA。完整性校验继续启用，不修改系统保护。
+- `install.ps1`：识别 x64 / ARM64，校验固定发行包 SHA，创建独立 UI 数据目录和桌面快捷方式。原应用文件不变，共用用户的 Codex 会话与配置；配置有备份。
+- `scripts/build_native_handoff.py`：仅在本机生成包含私有接入配置的 ZIP，保存在 Git 忽略目录 `delivery/`；不可公开上传。
+
+启动文件已修改，**定制副本不再具有有效的官方程序签名，也不是 OpenAI 官方支持版本**。不要关闭 SmartScreen、杀毒或 Windows 保护。升级需重新适配；官方包变化时安装器停止，不能把检测通过视为所有未来版本兼容。回退时退出定制副本、打开原应用；如需恢复线路，使用安装前配置备份。
 
 ## 当前发行包证据
 
@@ -19,7 +31,7 @@
 
 官方文档明确下载提供最新 Store 签名包，当前没有独立 MSI 或非 Store EXE 桌面包。官网安装入口可能调用 Store 组件，不应把二者当作必然存在的两套可分别修改的程序。
 
-以上资源只保留在忽略目录 `.runtime/native-research/`，不随仓库分发。签名文件存在不等于已验证 Windows 信任链。ASAR 资源哈希已校验；这不等于证明所有可能的客户端修改方案都不能运行。
+完整官方资源只保留在忽略目录 `.runtime/native-research/`，不随仓库分发。签名文件存在不等于已验证 Windows 信任链。ASAR 资源哈希已校验；Windows 定制副本实际启动证据见上方运行链接。
 
 ## 代码核查发现
 
@@ -28,7 +40,7 @@
 3. `ambient_usage.default` 是该官方用量对象中的显示数据，不是第三方网关地址配置。
 4. [网关文档](https://learn.chatgpt.com/docs/enterprise/connect-to-a-gateway)和[插件文档](https://developers.openai.com/plugins/build/plugins)中已检查的接入方式没有提供头像菜单用量扩展点。
 
-由此可以确认：仅改 TokenBots 网关、provider 名称或新增 `/v1/usage`，不足以实现目标。要交付这个位置的显示，还需要实际客户端集成方案及 Windows 运行验证。不能通过伪造官方登录身份来冒充号池用量，也不能把有代码特征当成补丁可用的证明。
+由此可以确认：仅改 TokenBots 网关、provider 名称或新增 `/v1/usage`，不足以实现目标。本实现通过定制副本的客户端组件接入 TokenBots 数据。不能通过伪造官方登录身份来冒充号池用量，也不能把有代码特征当成补丁可用的证明。
 
 ## 我们这边复核，无需搭档回传信息
 
@@ -41,4 +53,4 @@ python scripts/inspect_windows_release.py .runtime/native-research/ChatGPT-x64.m
 
 检测器只读包身份、版本、菜单哈希和特征，检查所读 ASAR 条目完整性，不读取任何已安装客户端凭据。新版本结构发生变化、条目损坏时会报错，需要重新研究，不会自动修改不认识的程序。特征输出不是“原生菜单兼容”认证。
 
-后续验收必须包括：实际 Windows 应用菜单出现真实用量、未知或过期数据显示正确、切换号池后的数据归属正确，以及更新和回退测试。本轮没有满足这些条件。
+验收区分 Windows 界面运行、真实云端接口以及搭档设备端体验；不能将一个层面的成功扩展成所有设备及版本已验证。
