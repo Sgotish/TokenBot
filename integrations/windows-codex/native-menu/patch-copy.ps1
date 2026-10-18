@@ -40,8 +40,6 @@ try {
     if ([regex]::Matches($handler,[regex]::Escape($anchor)).Count -ne 1) { throw 'Protocol handler changed.' }
     $handler = $handler.Replace($anchor,'o.protocol.handle(`app`,async t=>{if(new URL(t.url).host===`-`&&new URL(t.url).pathname.startsWith(`/tokenbots-native/`))return require(`./tokenbots-native.cjs`).handle(t);let n=L(t.url,e);')
     $patches['.vite/build/' + $handlerName] = [Text.Encoding]::UTF8.GetBytes($handler)
-    $early = Read-Entry $build.'early-bootstrap.js'
-    $patches['.vite/build/early-bootstrap.js'] = [Text.Encoding]::UTF8.GetBytes('require("./tokenbots-native.cjs").initialize();' + $early)
     $patches['.vite/build/tokenbots-native.cjs'] = [IO.File]::ReadAllBytes((Join-Path $PSScriptRoot 'backend.cjs'))
     $build | Add-Member -NotePropertyName 'tokenbots-native.cjs' -NotePropertyValue ([pscustomobject]@{size=0;offset='0'})
     $entries = New-Object 'System.Collections.Generic.List[object]'

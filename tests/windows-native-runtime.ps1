@@ -13,12 +13,30 @@ base_url = "http://127.0.0.1:18791/v1"
 wire_api = "responses"
 experimental_bearer_token = "fixture-only-not-a-real-key"
 requires_openai_auth = false
-'@ | Set-Content -Encoding UTF8 (Join-Path $env:CODEX_HOME 'config.toml')
-'{"OPENAI_API_KEY":"fixture-only-not-a-real-key"}' | Set-Content -Encoding UTF8 (Join-Path $env:CODEX_HOME 'auth.json')
+'@ | Set-Content -Encoding ASCII (Join-Path $env:CODEX_HOME 'config.toml')
+'{"OPENAI_API_KEY":"fixture-only-not-a-real-key"}' | Set-Content -Encoding ASCII (Join-Path $env:CODEX_HOME 'auth.json')
 '{"origin":"http://127.0.0.1:18791","key":"fixture-only-not-a-real-key","testOnlyLocalOrigin":true}' | Set-Content -Encoding ASCII (Join-Path $appDir 'resources\tokenbots-native.json')
 $fixture = Start-Process python -ArgumentList 'tests/native_fixture_server.py' -PassThru
 $app = Start-Process (Join-Path $appDir 'ChatGPT.exe') -ArgumentList '--force-renderer-accessibility' -WorkingDirectory $appDir -RedirectStandardOutput (Join-Path $PWD 'reports\native-stdout.txt') -RedirectStandardError (Join-Path $PWD 'reports\native-stderr.txt') -PassThru
 Start-Sleep -Seconds 35
+Add-Type -AssemblyName UIAutomationClient,UIAutomationTypes
+function Invoke-Visible([string]$name) {
+    $condition = New-Object Windows.Automation.PropertyCondition([Windows.Automation.AutomationElement]::NameProperty, $name)
+    $elements = [Windows.Automation.AutomationElement]::RootElement.FindAll([Windows.Automation.TreeScope]::Descendants,$condition)
+    foreach ($element in $elements) {
+        if ($element.Current.IsOffscreen -or -not $element.Current.IsEnabled) { continue }
+        $pattern = $null
+        if ($element.TryGetCurrentPattern([Windows.Automation.InvokePattern]::Pattern,[ref]$pattern)) { $pattern.Invoke(); return $true }
+        if ($element.TryGetCurrentPattern([Windows.Automation.SelectionItemPattern]::Pattern,[ref]$pattern)) { $pattern.Select(); return $true }
+        if ($element.TryGetCurrentPattern([Windows.Automation.TogglePattern]::Pattern,[ref]$pattern)) { $pattern.Toggle(); return $true }
+    }
+    return $false
+}
+if (Invoke-Visible 'Engineering') {
+    Start-Sleep -Seconds 1
+    $null = Invoke-Visible 'Continue'
+    Start-Sleep -Seconds 8
+}
 New-Item -ItemType Directory -Force reports | Out-Null
 Add-Type -AssemblyName System.Drawing, System.Windows.Forms
 $bounds = [Windows.Forms.Screen]::PrimaryScreen.Bounds
@@ -27,7 +45,6 @@ $graphics = [Drawing.Graphics]::FromImage($bitmap)
 $graphics.CopyFromScreen($bounds.Location,[Drawing.Point]::Empty,$bounds.Size)
 $bitmap.Save((Join-Path $PWD 'reports\native-desktop.png'))
 $graphics.Dispose(); $bitmap.Dispose()
-Add-Type -AssemblyName UIAutomationClient,UIAutomationTypes
 $root = [Windows.Automation.AutomationElement]::RootElement
 $all = $root.FindAll([Windows.Automation.TreeScope]::Descendants,[Windows.Automation.Condition]::TrueCondition)
 $names = @(); foreach ($element in $all) { try { if ($element.Current.Name) { $names += $element.Current.Name } } catch {} }

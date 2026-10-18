@@ -3,14 +3,6 @@
 const fs = require('node:fs');
 const path = require('node:path');
 
-function initialize() {
-  const {app} = require('electron');
-  const root = process.env.LOCALAPPDATA || path.join(require('node:os').homedir(), 'Library', 'Application Support');
-  const profile = path.join(root, 'TokenBots', 'Codex-custom-profile');
-  fs.mkdirSync(profile, {recursive: true});
-  app.setPath('userData', profile);
-}
-
 async function handle(request) {
   const reply = (data, status = 200) => new Response(JSON.stringify(data), {
     status, headers: {'Content-Type': 'application/json', 'Cache-Control': 'no-store'},
@@ -49,4 +41,4 @@ async function handle(request) {
     return reply({error: '无法读取用量，请检查网络或接入配置'}, 503);
   }
 }
-module.exports = {initialize, handle};
+module.exports = {handle};
