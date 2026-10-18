@@ -110,19 +110,17 @@ $astra = $modelNames | Where-Object { $_ -match 'Astra' } | Select-Object -First
 if (-not (Invoke-Visible $astra)) { throw 'Cannot select Astra from the native menu.' }
 Start-Sleep -Seconds 2
 $astraNames = Save-NativeEvidence 'astra-selected'
-$condition = New-Object Windows.Automation.PropertyCondition([Windows.Automation.AutomationElement]::ControlTypeProperty, [Windows.Automation.ControlType]::Slider)
-$sliders = [Windows.Automation.AutomationElement]::RootElement.FindAll([Windows.Automation.TreeScope]::Descendants,$condition)
-$changed = $false
-foreach ($slider in $sliders) {
-  if ($slider.Current.IsOffscreen) { continue }
-  $range = $null
-  if ($slider.TryGetCurrentPattern([Windows.Automation.RangeValuePattern]::Pattern,[ref]$range)) {
-    $range.SetValue($range.Current.Maximum)
-    $changed = $true
-    break
-  }
-}
-if (-not $changed) { throw 'Native reasoning slider could not be adjusted.' }
+# This client exposes its custom power control by its accessible value name,
+# not UIA RangeValuePattern. Use its documented Left/Right keyboard interaction.
+$powerName = $astraNames | Where-Object { $_ -match '^6 Astra .+, 1 of [0-9]+\.$' } | Select-Object -First 1
+if (-not $powerName) { throw 'Native Astra power control unavailable.' }
+$stepCount = [int]([regex]::Match($powerName, 'of ([0-9]+)').Groups[1].Value)
+$condition = New-Object Windows.Automation.PropertyCondition([Windows.Automation.AutomationElement]::NameProperty, $powerName)
+$power = [Windows.Automation.AutomationElement]::RootElement.FindFirst([Windows.Automation.TreeScope]::Descendants,$condition)
+$power.SetFocus()
+for ($step=1; $step -lt $stepCount; $step++) { [Windows.Forms.SendKeys]::SendWait('{RIGHT}') }
 Start-Sleep -Seconds 2
 $effortNames = Save-NativeEvidence 'astra-max-effort'
-if (-not ($effortNames -match 'Astra')) { throw 'Astra selection did not persist after effort change.' }
+if (-not ($effortNames | Where-Object { $_ -match ('^6 Astra .+, ' + $stepCount + ' of ' + $stepCount + '\.$') })) {
+  throw 'Native Astra reasoning control did not reach its highest supported level.'
+}
