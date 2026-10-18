@@ -26,11 +26,19 @@ test('stale or expired windows cannot appear as current remaining percentage', (
   assert.match(render({selected_pool: 'plus', accounts: [a]}).children[0].rightIcon.children, /待更新/);
   a = account('Plus · 账号 2', 94);
   a.windows[0].resets_at = '2000-01-01T00:00:00Z';
-  assert.match(render({selected_pool: 'plus', accounts: [a]}).children[0].rightIcon.children, /未知/);
+  assert.match(render({selected_pool: 'plus', accounts: [a]}).children[0].rightIcon.children, /待更新/);
 });
-test('auto mode reports separate accounts and flags partially known windows', () => {
+test('auto mode reports separate plans without debugging details', () => {
   const a = account('Pro', 91);
   a.windows.push({label: '7d', remaining_percent: null, stale: true});
   const text = render({selected_pool: 'auto', accounts: [a, account('Plus', 94)]}).children[0].rightIcon.children;
-  assert.equal(text, 'Pro 91%（部分窗口） · Plus 94%');
+  assert.equal(text, 'Pro 91% · Plus 94%');
+});
+
+test('compact menu hides account identifiers, timestamps and unavailable windows', () => {
+  const a=account('Pro · 账号 1',55);a.snapshot_at='2026-10-18T20:00:00Z';
+  a.windows.push({label:'7 天窗口',remaining_percent:null,reason:'upstream internal detail',stale:true});
+  const text=JSON.stringify(render({selected_pool:'pro',accounts:[a,account('Plus · 账号 2',94)]}));
+  assert.match(text,/套餐余量/);assert.match(text,/55%/);
+  for(const forbidden of ['账号 1','账号 2','上游','本次检查','刷新显示','2026-10','upstream internal detail','部分窗口','平台不设']) assert(!text.includes(forbidden),forbidden);
 });

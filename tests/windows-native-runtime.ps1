@@ -8,7 +8,7 @@ New-Item -ItemType Directory -Force $env:CODEX_HOME | Out-Null
 model = "gpt-6.1-sol"
 model_provider = "tokenbots_partner_20261016"
 [model_providers.tokenbots_partner_20261016]
-name = "TokenBots Partner Test"
+name = "TokenBots partner"
 base_url = "http://127.0.0.1:18791/v1"
 wire_api = "responses"
 experimental_bearer_token = "fixture-only-not-a-real-key"
@@ -90,3 +90,17 @@ if (-not ($switched -match 'Pro 81%')) { throw 'Native Pro selection did not upd
 Start-Sleep -Seconds 35
 $refreshed = Save-NativeEvidence 'auto-refresh'
 if (-not ($refreshed -match 'Pro 80%')) { throw 'Open native menu did not refresh changed quota automatically.' }
+
+# The original model/effort controls must remain available in the custom client.
+$null = Invoke-Visible 'Open profile menu'
+Start-Sleep -Seconds 1
+$composer = Save-NativeEvidence 'composer'
+$control = $composer | Where-Object { $_ -match 'Open and adjust reasoning effort|Select model|Select reasoning effort' } | Select-Object -First 1
+if ($control) { $null = Invoke-Visible $control; Start-Sleep -Seconds 2 }
+$picker = Save-NativeEvidence 'model-control'
+$modelButton = $picker | Where-Object { $_ -match '6\.1.?Sol|6\.1 Sol' } | Select-Object -First 1
+if ($modelButton) { $null = Invoke-Visible $modelButton; Start-Sleep -Seconds 2 }
+$modelNames = Save-NativeEvidence 'models'
+foreach ($model in @('6.1','Astra','6 Sol','6 Luna','5.6 Sol','Terra','5.6 Luna')) {
+  if (-not ($modelNames | Where-Object { $_.Replace('-',' ').Contains($model) })) { throw ('Model picker missing ' + $model) }
+}

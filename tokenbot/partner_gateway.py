@@ -16,6 +16,7 @@ from fastapi.responses import JSONResponse, StreamingResponse
 from starlette.background import BackgroundTask
 
 from tokenbot.partner_portal import ClientRegistry, install_portal
+from tokenbot.model_catalog import discovery, validate_selection
 
 ROOT = Path(__file__).resolve().parents[1]
 MODEL = 'gpt-6.1-sol'
@@ -86,15 +87,15 @@ def create_app(config, transport=None):
                 elif encoding != 'identity':
                     return error('Unsupported request encoding', 415)
                 data = json.loads(body)
-                if not isinstance(data, dict) or data.get('model') != MODEL:
-                    return error('Use the verified test model: ' + MODEL, 400)
+                selection_error = validate_selection(data)
+                if selection_error:
+                    return error(selection_error, 400)
                 if data.get('background') or data.get('service_tier') not in (None, 'auto', 'default'):
                     return error('Background and priority requests are disabled', 400)
             except (ValueError, UnicodeError, TimeoutError, zstandard.ZstdError):
                 return error('Invalid request', 400)
-        # Fixed discovery list is an allowlist, not a claim about all upstream models.
         if request.method == 'GET':
-            return {'object': 'list', 'data': [{'id': MODEL, 'object': 'model', 'owned_by': 'subscription-pilot'}]}
+            return discovery()
         queue_start = time.monotonic()
         if lock.locked():
             busy_headers = {'Retry-After': '5', 'X-TokenBot-Error-Source': 'bridge_capacity'}

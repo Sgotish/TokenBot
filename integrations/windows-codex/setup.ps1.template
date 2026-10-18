@@ -5,7 +5,7 @@ $tbKey = '__TEST_KEY__'
 $tbLabel = 'TokenBots Partner Test'
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 $tbCheck = Invoke-RestMethod -Uri ($tbUrl + '/models') -Headers @{Authorization=('Bearer ' + $tbKey)} -TimeoutSec 30
-if (-not ($tbCheck.data.id -contains 'gpt-6.1-sol')) { throw 'Test model is unavailable. Nothing was changed.' }
+if (-not ($tbCheck.data.id -contains 'gpt-6-astra')) { throw 'Test model is unavailable. Nothing was changed.' }
 $tbDir = if ($env:CODEX_HOME) { $env:CODEX_HOME } else { Join-Path $env:USERPROFILE '.codex' }
 New-Item -ItemType Directory -Path $tbDir -Force | Out-Null
 $tbPath = Join-Path $tbDir 'config.toml'
@@ -36,9 +36,9 @@ $tbRoot = if ($tbSection.Success) { $tbOld.Substring(0,$tbSection.Index) } else 
 $tbRest = if ($tbSection.Success) { $tbOld.Substring($tbSection.Index) } else { '' }
 $tbRoot = [regex]::Replace($tbRoot, '(?m)^[ \t]*(model|model_provider|model_reasoning_effort|service_tier)[ \t]*=[^\r\n]*(\r?\n|$)', '')
 $tbNew = @"
-model = "gpt-6.1-sol"
+model = "gpt-6-astra"
 model_provider = "tokenbots_partner_20261016"
-model_reasoning_effort = "medium"
+model_reasoning_effort = "high"
 $tbRoot
 $tbRest
 

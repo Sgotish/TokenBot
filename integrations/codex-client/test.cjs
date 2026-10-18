@@ -7,17 +7,19 @@ const key='fixture_only_not_a_real_key_12345';
 async function fixture(t){
  const requests=[];
  const server=http.createServer((req,res)=>{
-  req.resume();requests.push({path:req.url,auth:req.headers.authorization});
+  let raw='';req.on('data',b=>raw+=b);req.on('end',()=>{
+  const body=raw?JSON.parse(raw):null;requests.push({path:req.url,auth:req.headers.authorization,body});
   if(req.headers.authorization!=='Bearer '+key){res.writeHead(401);res.end('{}');return;}
-  if(req.url==='/v1/models'){res.setHeader('Content-Type','application/json');res.end(JSON.stringify({data:[{id:'gpt-6.1-sol'}]}));return;}
+  if(req.url==='/v1/models'){res.setHeader('Content-Type','application/json');res.end(JSON.stringify({data:require('../model-catalog/models.json').models}));return;}
   if(req.url.startsWith('/v1/responses')){
    res.writeHead(200,{'Content-Type':'text/event-stream'});
    const message={id:'msg_fixture',type:'message',role:'assistant',status:'completed',content:[{type:'output_text',text:'42',annotations:[]}]};
-   const response={id:'resp_fixture',object:'response',created_at:1,model:'gpt-6.1-sol',status:'completed',output:[message],usage:{input_tokens:1,output_tokens:1,total_tokens:2}};
+   const response={id:'resp_fixture',object:'response',created_at:1,model:body.model,status:'completed',output:[message],usage:{input_tokens:1,output_tokens:1,total_tokens:2}};
    const events=[{type:'response.created',response:{...response,status:'in_progress',output:[]}},{type:'response.output_item.added',output_index:0,item:{...message,status:'in_progress',content:[]}},{type:'response.content_part.added',item_id:message.id,output_index:0,content_index:0,part:{type:'output_text',text:'',annotations:[]}},{type:'response.output_text.delta',item_id:message.id,output_index:0,content_index:0,delta:'42'},{type:'response.output_text.done',item_id:message.id,output_index:0,content_index:0,text:'42'},{type:'response.output_item.done',output_index:0,item:message},{type:'response.completed',response}];
    for(const [i,e]of events.entries())res.write('data: '+JSON.stringify({...e,sequence_number:i})+'\n\n');res.end();return;
   }
   res.writeHead(404);res.end('{}');
+  });
  });
  await new Promise(r=>server.listen(0,'127.0.0.1',r));t.after(()=>server.close());
  const origin='http://127.0.0.1:'+server.address().port;
@@ -82,5 +84,44 @@ test('real installed Codex CLI consumes generated config and completes a streame
  proc.stdout.resume();proc.stderr.on('data',b=>stderr+=b);t.after(()=>proc.kill());
  const code=await new Promise((resolve,reject)=>{proc.on('error',reject);proc.on('close',resolve);});
  assert.equal(code,0,stderr.replaceAll(key,'[redacted]'));assert.equal(fs.readFileSync(out,'utf8').trim(),'42');
- assert.ok(f.requests.some(r=>r.path.includes('/responses')&&r.auth==='Bearer '+key));
+ assert.ok(f.requests.some(r=>r.path.includes('/responses')&&r.auth==='Bearer '+key&&r.body.model==='gpt-6-astra'&&r.body.reasoning.effort==='low'));
+});
+
+test('setup preserves a supported selected model and effort',async t=>{
+ const f=await fixture(t),file=path.join(f.home,'config.toml');
+ fs.writeFileSync(file,'model="gpt-6-astra"\nmodel_reasoning_effort="xhigh"\n');
+ await client.configure(f);const d=parse(fs.readFileSync(file,'utf8'));
+ assert.equal(d.model,'gpt-6-astra');assert.equal(d.model_reasoning_effort,'xhigh');
+});
+test('actual app-server exposes all seven models and supported efforts',{skip:process.env.RUN_CODEX_SMOKE!=='1',timeout:30000},async t=>{
+ const f=await fixture(t);await client.configure(f);const bin=client.resolveCodex(process.env.TOKENBOTS_TEST_CODEX);
+ const proc=cp.spawn(bin.command,[...bin.args,'app-server'],{env:{...process.env,CODEX_HOME:f.home,TOKENBOTS_API_KEY:key},stdio:['pipe','pipe','pipe']});
+ t.after(()=>proc.kill());proc.stderr.resume();
+ const send=x=>proc.stdin.write(JSON.stringify(x)+'\n');
+ const result=await new Promise((resolve,reject)=>{let raw='';
+  proc.on('error',reject);proc.on('exit',()=>reject(Error('App server exited before listing models')));
+  proc.stdout.on('data',b=>{raw+=b;let split;while((split=raw.indexOf('\n'))>=0){const line=raw.slice(0,split);raw=raw.slice(split+1);if(!line)continue;const d=JSON.parse(line);
+   if(d.id===1){send({method:'initialized'});send({id:2,method:'model/list',params:{includeHidden:false}});}
+   if(d.id===2)resolve(d);
+  }});
+  send({id:1,method:'initialize',params:{clientInfo:{name:'tokenbots-test',version:'1'},capabilities:{experimentalApi:true}}});
+ });
+ assert(!result.error,JSON.stringify(result.error));
+ for(const expected of require('../model-catalog/models.json').models){
+  const m=result.result.data.find(m=>m.id===expected.id);assert(m,expected.id);
+  for(const e of expected.reasoning_efforts)assert(m.supportedReasoningEfforts.some(x=>x.reasoningEffort===e),expected.id+':'+e);
+ }
+ const closed=new Promise(r=>proc.on('close',r));proc.kill();await closed;
+});
+test('actual CLI translates Ultra client mode before sending the upstream request',{skip:process.env.RUN_CODEX_SMOKE!=='1',timeout:90000},async t=>{
+ const f=await fixture(t);await client.configure(f);const bin=client.resolveCodex(process.env.TOKENBOTS_TEST_CODEX);
+ const out=path.join(f.home,'ultra-answer.txt');
+ const proc=cp.spawn(bin.command,[...bin.args,'exec','--skip-git-repo-check','--ephemeral','--sandbox','read-only','-c','model_reasoning_effort="ultra"','--output-last-message',out,'Reply with 42 only. Do not use tools or delegate.'],{cwd:f.home,env:{...process.env,CODEX_HOME:f.home,TOKENBOTS_API_KEY:key},stdio:['ignore','pipe','pipe']});
+ let err='';proc.stdout.resume();proc.stderr.on('data',b=>err+=b);t.after(()=>proc.kill());
+ const code=await new Promise((r,j)=>{proc.on('error',j);proc.on('close',r);});
+ assert.equal(code,0,err.replaceAll(key,'[redacted]'));assert.equal(fs.readFileSync(out,'utf8').trim(),'42');
+ const sent=f.requests.find(r=>r.path.includes('/responses'));
+ assert(sent);assert.notEqual(sent.body.reasoning.effort,'ultra');
+ assert(['max','xhigh'].includes(sent.body.reasoning.effort));
+ console.log('Ultra upstream effort:',sent.body.reasoning.effort);
 });

@@ -30,7 +30,7 @@ try {
     if ((Hash-Bytes ([Text.Encoding]::UTF8.GetBytes($menu))) -ne '2e9cd921b030aab1dbd26e12ac1698f4bc9c3129b442e4c65ae690f43d3574c3') { throw 'Menu differs from the reviewed release; nothing changed.' }
     $anchor = 'Pn=f?(0,$.jsx)'
     if ([regex]::Matches($menu,[regex]::Escape($anchor)).Count -ne 1) { throw 'Menu anchor is ambiguous.' }
-    $menu = $menu.Replace($anchor,'Pn=n?.modelProviderName===`TokenBots Partner Test`?(0,$.jsx)(TokenBotsNativeUsage,{}):f?(0,$.jsx)')
+    $menu = $menu.Replace($anchor,'Pn=n?.modelProviderName?.startsWith(`TokenBots`)?(0,$.jsx)(TokenBotsNativeUsage,{}):f?(0,$.jsx)')
     $menu += "`n" + [IO.File]::ReadAllText((Join-Path $PSScriptRoot 'component.js'))
     $patches['webview/assets/' + $menuName] = [Text.Encoding]::UTF8.GetBytes($menu)
     $build = $tree.files.'.vite'.files.build.files

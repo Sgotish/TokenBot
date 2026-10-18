@@ -4,6 +4,7 @@ const fs=require('node:fs'), path=require('node:path'), os=require('node:os');
 const crypto=require('node:crypto'), cp=require('node:child_process');
 const {parse,stringify}=require('smol-toml');
 const PROVIDER='tokenbots_cross_platform';
+const CATALOG=require('../model-catalog/models.json').models;
 const hash=v=>crypto.createHash('sha256').update(v??'<absent>').digest('hex');
 const read=p=>fs.existsSync(p)?fs.readFileSync(p,'utf8'):null;
 function write(file,value){
@@ -39,7 +40,8 @@ function mergeConfig(old,access,target,activeProfile){
     // The original profile file is untouched; rollback restores its selection byte-for-byte.
     delete d.profile;
   }
-  d.model='gpt-6.1-sol';d.model_reasoning_effort='medium';d.model_provider=PROVIDER;delete d.service_tier;
+  const selected=CATALOG.find(m=>m.id===d.model)||CATALOG.find(m=>m.id==='gpt-6-astra');
+  d.model=selected.id;d.model_reasoning_effort=selected.reasoning_efforts.includes(d.model_reasoning_effort)?d.model_reasoning_effort:'high';d.model_provider=PROVIDER;delete d.service_tier;
   d.model_providers||={};d.model_providers[PROVIDER]={name:access.label,base_url:access.base_url,wire_api:'responses',
     ...(target==='cli'?{env_key:'TOKENBOTS_API_KEY'}:{experimental_bearer_token:access.key}),
     requires_openai_auth:false,supports_websockets:false,request_max_retries:0,stream_max_retries:0,stream_idle_timeout_ms:300000,
@@ -62,7 +64,7 @@ async function configure({home,access,target,localTest=false}){
   const activeProfile=profile?read(path.join(home,profile+'.config.toml')):undefined;
   const next=mergeConfig(before,access,target,activeProfile);
   const models=await(await request(access,'/v1/models')).json();
-  if(!models.data?.some(m=>m.id==='gpt-6.1-sol'))throw Error('Model unavailable. Nothing changed.');
+  if(!models.data?.some(m=>m.id===parse(next).model))throw Error('Model unavailable. Nothing changed.');
   const na=JSON.stringify({...access,target},null,2)+'\n';
   const record={before,beforeAccess,installed:hash(next),installedAccess:hash(na),target,created:new Date().toISOString()};
   const backup=path.join(home,'.tokenbots-setup',Date.now()+'-'+crypto.randomUUID()+'.json');

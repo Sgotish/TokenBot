@@ -3,7 +3,7 @@ $ErrorActionPreference = 'Stop'
 $originalHome = $env:CODEX_HOME
 $fixtureRoot = Join-Path ([IO.Path]::GetTempPath()) ('tokenbot-customers-' + [guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Path $fixtureRoot | Out-Null
-function Invoke-RestMethod { return @{data=@(@{id='gpt-6.1-sol'})} }
+function Invoke-RestMethod { return @{data=@(@{id='gpt-6-astra'})} }
 try {
     $template = [IO.File]::ReadAllText((Join-Path $PSScriptRoot '..\integrations\windows-codex\setup.ps1.template'))
     foreach ($name in @('alice','bob')) {

@@ -3,11 +3,16 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 import json
 import time
 from datetime import datetime, timezone
+from pathlib import Path
 
 class Handler(BaseHTTPRequestHandler):
     selected_pool = "plus"
     pro_reads = 0
     def do_GET(self):
+        if self.path.startswith('/v1/models'):
+            models=json.loads(Path('integrations/model-catalog/models.json').read_text())['models']
+            body=json.dumps({'object':'list','data':[{'id':m['id'],'object':'model','owned_by':'fixture'} for m in models]}).encode()
+            self.send_response(200);self.send_header('Content-Type','application/json');self.end_headers();self.wfile.write(body);return
         if self.path == '/v1/usage' and Handler.selected_pool == 'pro':
             Handler.pro_reads += 1
         resets = datetime.fromtimestamp(time.time() + 3600, timezone.utc).isoformat()
