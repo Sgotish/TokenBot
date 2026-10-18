@@ -1,7 +1,6 @@
 # Replace with a hostname resolving to this server and its public interface IP.
 {$TOKENBOT_PUBLIC_HOST} {
     bind {$TOKENBOT_PUBLIC_IP}
-    reverse_proxy 127.0.0.1:8181 {
-        flush_interval -1
-    }
+    # SSE is flushed automatically; negative flush_interval would suppress client cancellation.
+    reverse_proxy 127.0.0.1:8181
 }

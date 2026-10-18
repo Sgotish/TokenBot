@@ -25,6 +25,10 @@ def create_app(config, transport=None):
     if concurrency < 1 or concurrency > 8:
         raise ValueError('Invalid bridge concurrency')
     lock = asyncio.Semaphore(concurrency)
+    max_pending = int(config.get('max_pending', 4))
+    queue_timeout = float(config.get('queue_timeout_seconds', 30))
+    if not 0 <= max_pending <= 16 or not 0 < queue_timeout <= 60:
+        raise ValueError('Invalid bridge queue limits')
     state = PoolState(config)
     client = httpx.AsyncClient(base_url='http://127.0.0.1:8180', trust_env=False,
                               follow_redirects=False, timeout=300, transport=transport)
@@ -85,10 +89,29 @@ def create_app(config, transport=None):
         # Fixed discovery list is an allowlist, not a claim about all upstream models.
         if request.method == 'GET':
             return {'object': 'list', 'data': [{'id': MODEL, 'object': 'model', 'owned_by': 'subscription-pilot'}]}
+        queue_start = time.monotonic()
         if lock.locked():
-            return error('Test server is busy; retry after the current request finishes', 429,
-                         {'Retry-After': '5', 'X-TokenBot-Error-Source': 'bridge_concurrency'})
-        await lock.acquire()
+            busy_headers = {'Retry-After': '5', 'X-TokenBot-Error-Source': 'bridge_capacity'}
+            if state.pending >= max_pending:
+                return error('Server queue is full; subscription quota was not checked or consumed', 503, busy_headers)
+            state.pending += 1
+            try:
+                while True:
+                    remaining = queue_timeout - (time.monotonic() - queue_start)
+                    if remaining <= 0:
+                        return error('Server queue wait timed out; retry later', 503, busy_headers)
+                    if await request.is_disconnected():
+                        return error('Client disconnected before model execution', 499)
+                    try:
+                        await asyncio.wait_for(lock.acquire(), min(.25, remaining))
+                        break
+                    except TimeoutError:
+                        continue
+            finally:
+                state.pending -= 1
+        else:
+            await lock.acquire()
+        queue_start_acquired = time.monotonic()
         state.active += 1
         selected = state.selected
         upstream_key = state.pools[selected]["key"]
@@ -133,7 +156,8 @@ def create_app(config, transport=None):
 
         response_headers = {name: value for name, value in upstream.headers.items()
                             if name in ('retry-after', 'x-request-id', 'x-codex-turn-state') or name.startswith('x-ratelimit-')}
-        response_headers.update({'Cache-Control': 'no-store', 'X-Accel-Buffering': 'no', 'X-TokenBot-Pool': selected})
+        response_headers.update({'Cache-Control': 'no-store', 'X-Accel-Buffering': 'no', 'X-TokenBot-Pool': selected,
+                                 'X-TokenBot-Queue-Wait-Ms': str(round((queue_start_acquired-queue_start)*1000))})
         if upstream.status_code >= 400:
             response_headers['X-TokenBot-Error-Source'] = 'upstream_gateway'
         return StreamingResponse(chunks(), status_code=upstream.status_code,

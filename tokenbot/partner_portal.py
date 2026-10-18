@@ -14,10 +14,31 @@ STATIC = Path(__file__).with_name('static')
 COOKIE = '__Host-tokenbot-session'
 
 
+class PortalSecurityHeaders:
+    """Add headers without wrapping receive: queued requests must see disconnects."""
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope['type'] != 'http':
+            return await self.app(scope, receive, send)
+        values = {
+            b'cache-control': b'no-store', b'x-content-type-options': b'nosniff',
+            b'referrer-policy': b'no-referrer', b'x-frame-options': b'DENY',
+            b'content-security-policy': b"default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'",
+        }
+        async def send_headers(message):
+            if message['type'] == 'http.response.start':
+                message = {**message, 'headers': [(k,v) for k,v in message.get('headers', []) if k.lower() not in values] + list(values.items())}
+            await send(message)
+        await self.app(scope, receive, send_headers)
+
+
 class PoolState:
     def __init__(self, config):
         self.config = config
         self.active = 0
+        self.pending = 0
         self.pools = config.get('pools', {'auto': {'key': config['key'], 'label': '双订阅自动'}})
         self.path = Path(config['selection_path']) if config.get('selection_path') else None
         self.selected = 'auto'
@@ -29,7 +50,7 @@ class PoolState:
     def select(self, pool):
         if pool not in self.pools:
             raise ValueError('Unknown pool')
-        if self.active:
+        if self.active or self.pending:
             raise RuntimeError('Requests are in progress')
         if self.path:
             tmp = self.path.with_suffix('.tmp')
@@ -44,7 +65,7 @@ class PoolState:
         except (OSError, ValueError, KeyError):
             snapshot = {'generated_at': None, 'accounts': [], 'records': [], 'totals': {}, 'error': '用量数据暂不可用'}
         return {**snapshot, 'snapshot_stale': not snapshot.get('generated_at') or time.time()-snapshot['generated_at'] > 180,
-                'selected_pool': self.selected, 'active_requests': self.active,
+                'selected_pool': self.selected, 'active_requests': self.active, 'queued_requests': self.pending,
                 'pools': [{'id': k, 'label': v['label']} for k, v in self.pools.items()],
                 'platform_quota': None, 'expires_at': self.config['expires_at'],
                 'model': 'gpt-6.1-sol'}
@@ -74,15 +95,7 @@ def install_portal(app, config, state):
     app.state.portal_authorized = authorized
     app.state.portal_same_origin = same_origin
 
-    @app.middleware('http')
-    async def security_headers(request, call_next):
-        response = await call_next(request)
-        response.headers['Cache-Control'] = 'no-store'
-        response.headers['X-Content-Type-Options'] = 'nosniff'
-        response.headers['Referrer-Policy'] = 'no-referrer'
-        response.headers['X-Frame-Options'] = 'DENY'
-        response.headers['Content-Security-Policy'] = "default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'"
-        return response
+    app.add_middleware(PortalSecurityHeaders)
 
     @app.get('/portal')
     async def page():
