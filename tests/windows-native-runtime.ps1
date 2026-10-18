@@ -55,19 +55,33 @@ if (Invoke-Visible 'Engineering') {
 }
 $opened = Invoke-Visible 'Open profile menu'
 if ($opened) { Start-Sleep -Seconds 5 }
-New-Item -ItemType Directory -Force reports | Out-Null
 Add-Type -AssemblyName System.Drawing, System.Windows.Forms
+function Save-NativeEvidence([string]$suffix) {
 $bounds = [Windows.Forms.Screen]::PrimaryScreen.Bounds
 $bitmap = New-Object Drawing.Bitmap($bounds.Width,$bounds.Height)
 $graphics = [Drawing.Graphics]::FromImage($bitmap)
 $graphics.CopyFromScreen($bounds.Location,[Drawing.Point]::Empty,$bounds.Size)
-$bitmap.Save((Join-Path $PWD 'reports\native-desktop.png'))
+$bitmap.Save((Join-Path $PWD ('reports\native-' + $suffix + '.png')))
 $graphics.Dispose(); $bitmap.Dispose()
 $root = [Windows.Automation.AutomationElement]::RootElement
 $all = $root.FindAll([Windows.Automation.TreeScope]::Descendants,[Windows.Automation.Condition]::TrueCondition)
 $names = @(); foreach ($element in $all) { try { if ($element.Current.Name) { $names += $element.Current.Name } } catch {} }
-$names | Set-Content -Encoding UTF8 reports/native-ui.txt
+$names | Set-Content -Encoding UTF8 ('reports/native-' + $suffix + '-ui.txt')
+return $names
+}
+$names = Save-NativeEvidence 'menu'
 Get-Process ChatGPT,Codex -ErrorAction SilentlyContinue | Select-Object ProcessName,Id,MainWindowTitle | Format-Table
 if (-not (Get-Process ChatGPT -ErrorAction SilentlyContinue)) { throw 'Custom client did not stay running. See logs and screenshot.' }
 if (-not $opened) { throw 'Native profile menu was not reachable.' }
 if (-not ($names -match '94%')) { throw 'Real native menu did not show fixture remaining usage.' }
+
+$usageLabel = -join ([char[]](0x4f7f,0x7528,0x60c5,0x51b5))
+$usageName = $names | Where-Object { $_.StartsWith($usageLabel) } | Select-Object -First 1
+if (-not $usageName -or -not (Invoke-Visible $usageName)) { throw 'Cannot expand native usage details.' }
+Start-Sleep -Seconds 2
+$details = Save-NativeEvidence 'details'
+if (-not ($details -match '97%')) { throw 'Native usage windows did not expand.' }
+if (-not (Invoke-Visible 'Pro')) { throw 'Native Pro selector unavailable.' }
+Start-Sleep -Seconds 3
+$switched = Save-NativeEvidence 'pro'
+if (-not ($switched -match 'Pro 81%')) { throw 'Native Pro selection did not update remaining usage.' }

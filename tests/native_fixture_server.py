@@ -5,15 +5,27 @@ import time
 from datetime import datetime, timezone
 
 class Handler(BaseHTTPRequestHandler):
+    selected_pool = "plus"
     def do_GET(self):
         resets = datetime.fromtimestamp(time.time() + 3600, timezone.utc).isoformat()
-        data = {'selected_pool': 'plus', 'snapshot_stale': False, 'active_requests': 0,
-                'accounts': [{'label': 'Plus', 'snapshot_stale': False, 'windows': [
+        data = {'selected_pool': Handler.selected_pool, 'snapshot_stale': False, 'active_requests': 0,
+                'accounts': [{'label': 'Plus · 账号 2', 'snapshot_stale': False, 'windows': [
                     {'label': '5 小时窗口', 'remaining_percent': 94, 'stale': False, 'resets_at': resets},
                     {'label': '7 天窗口', 'remaining_percent': 97, 'stale': False, 'resets_at': resets},
+                ]}, {'label': 'Pro · 账号 1', 'snapshot_stale': False, 'windows': [
+                    {'label': '5 小时窗口', 'remaining_percent': 81, 'stale': False, 'resets_at': resets},
+                    {'label': '7 天窗口', 'remaining_percent': 90, 'stale': False, 'resets_at': resets},
                 ]}], 'records': []}
         body = json.dumps(data).encode()
         self.send_response(200); self.send_header('Content-Type', 'application/json'); self.end_headers(); self.wfile.write(body)
+
+    def do_POST(self):
+        data = json.loads(self.rfile.read(int(self.headers.get('Content-Length', '0'))))
+        if self.path != '/portal/api/pool' or data.get('pool') not in ('auto', 'plus', 'pro'):
+            self.send_error(400)
+            return
+        Handler.selected_pool = data['pool']
+        self.do_GET()
 
     def log_message(self, *_):
         pass
