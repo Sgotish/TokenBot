@@ -2,6 +2,7 @@
 $ErrorActionPreference = 'Stop'
 $tbUrl = '__BASE_URL__'
 $tbKey = '__TEST_KEY__'
+$tbLabel = 'TokenBots Partner Test'
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 $tbCheck = Invoke-RestMethod -Uri ($tbUrl + '/models') -Headers @{Authorization=('Bearer ' + $tbKey)} -TimeoutSec 30
 if (-not ($tbCheck.data.id -contains 'gpt-6.1-sol')) { throw 'Test model is unavailable. Nothing was changed.' }
@@ -11,7 +12,7 @@ $tbPath = Join-Path $tbDir 'config.toml'
 $tbOld = if (Test-Path $tbPath) { [IO.File]::ReadAllText($tbPath) } else { '' }
 if ($tbOld.Contains('"""') -or $tbOld.Contains("'''")) { throw 'Multiline TOML found. Ask us to merge manually; nothing was changed.' }
 if ($tbOld -match '(?m)^\s*model_providers\s*=') { throw 'Inline provider configuration found. Ask us to merge manually.' }
-$tbBackup = $tbPath + '.before-tokenbots-' + (Get-Date -Format 'yyyyMMdd-HHmmss')
+$tbBackup = $tbPath + '.before-tokenbots-' + (Get-Date -Format 'yyyyMMdd-HHmmss-fff') + '-' + [guid]::NewGuid().ToString('N').Substring(0,6)
 if (Test-Path $tbPath) { Copy-Item -LiteralPath $tbPath -Destination $tbBackup }
 if ($tbOld.Contains('tokenbots_partner_20261016')) {
     $tbPattern = '(?ms)^\[model_providers\.tokenbots_partner_20261016\][ \t]*\r?\n(?:(?!^[ \t]*\[).)*'
@@ -23,6 +24,7 @@ if ($tbOld.Contains('tokenbots_partner_20261016')) {
     }
     $tbBlock = [regex]::Replace($tbBlock, '(?m)^base_url\s*=[^\r\n]*', ('base_url = "' + $tbUrl + '"'))
     $tbBlock = [regex]::Replace($tbBlock, '(?m)^experimental_bearer_token\s*=[^\r\n]*', ('experimental_bearer_token = "' + $tbKey + '"'))
+    $tbBlock = [regex]::Replace($tbBlock, '(?m)^name\s*=[^\r\n]*', ('name = "' + $tbLabel + '"'))
     $tbFixed = $tbOld.Substring(0,$tbMatches[0].Index) + $tbBlock + $tbOld.Substring($tbMatches[0].Index + $tbMatches[0].Length)
     [IO.File]::WriteAllText($tbPath, $tbFixed, (New-Object Text.UTF8Encoding($false)))
     Write-Host 'Configured: test endpoint repaired. Restart Codex and start a NEW LOCAL chat.'
@@ -41,7 +43,7 @@ $tbRoot
 $tbRest
 
 [model_providers.tokenbots_partner_20261016]
-name = "TokenBots Partner Test"
+name = "$tbLabel"
 base_url = "$tbUrl"
 wire_api = "responses"
 experimental_bearer_token = "$tbKey"

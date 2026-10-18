@@ -13,7 +13,7 @@ from tokenbot.client import NoRedirect
 from tokenbot.usage_snapshot import account_view, record_view, quota_view, epoch
 
 
-def collect(config, panel_override=None, now_override=None):
+def collect(config, panel_override=None, now_override=None, account_snapshot=None):
     opener = urllib.request.build_opener(NoRedirect(), urllib.request.ProxyHandler({}))
     def panel(method, path, token=None, body=None):
         req = urllib.request.Request('http://127.0.0.1:8180/api/v1'+path, method=method,
@@ -26,7 +26,7 @@ def collect(config, panel_override=None, now_override=None):
         return data['data']
     if panel_override is not None:
         panel = panel_override
-    admin = panel('POST','/auth/login',body=config['admin'])['access_token']
+    admin = panel('POST','/auth/login',body=config['admin'])['access_token'] if account_snapshot is None else None
     user = panel('POST','/auth/login',body=config['partner'])['access_token']
     now = time.time() if now_override is None else now_override
     try:
@@ -35,7 +35,7 @@ def collect(config, panel_override=None, now_override=None):
         previous = []
     previous = {a['label']: a for a in previous if isinstance(a, dict) and 'label' in a}
     accounts = []
-    for key, label in config['accounts'].items():
+    for key, label in (config['accounts'].items() if account_snapshot is None else []):
         account = panel('GET', '/admin/accounts/'+key, admin)
         old = previous.get(label, {})
         view = account_view(account, label, now)
@@ -55,6 +55,8 @@ def collect(config, panel_override=None, now_override=None):
             view['next_retry_at'] = max(old.get('next_retry_at', 0), now+cooldown) if not isinstance(exc, RuntimeError) else old.get('next_retry_at', now+60)
             view['windows'] = [{**w, 'stale': True} for w in view.get('windows', [])]
         accounts.append(view)
+    if account_snapshot is not None:
+        accounts = account_snapshot
     stats = panel('GET','/usage/stats',user)
     records = panel('GET','/usage?page=1&page_size=30',user)['items']
     return {'generated_at': now, 'quota_refresh_interval_seconds': 60, 'accounts':accounts,
@@ -81,6 +83,23 @@ def main():
     os.chmod(tmp,0o640);tmp.replace(dest)
     if failed:raise SystemExit('Usage snapshot refresh failed; credentials and upstream errors suppressed.')
     print('Sanitized partner usage snapshot updated.')
+    # Each customer authenticates as its own non-admin upstream user. Never filter a
+    # global usage dump client-side, and never query quota again for every customer.
+    for file in sorted(Path(config['customers_dir']).glob('*.json')) if config.get('customers_dir') else []:
+        customer=json.loads(file.read_text())
+        if not customer.get('snapshot_path'):
+            continue  # Incomplete provisioning recovery record.
+        target=Path(customer['snapshot_path'])
+        try:
+            snapshot=collect(customer,account_snapshot=data['accounts'])
+        except Exception:
+            try:snapshot=json.loads(target.read_text())
+            except (OSError,ValueError):snapshot={'generated_at':None,'accounts':[],'totals':{},'records':[]}
+            snapshot.update(error='客户用量同步失败，保留历史记录',failed_at=time.time())
+        temp=target.with_suffix('.tmp')
+        fd=os.open(temp,os.O_WRONLY|os.O_CREAT|os.O_TRUNC,0o640)
+        with os.fdopen(fd,'w') as f:json.dump(snapshot,f,ensure_ascii=False)
+        os.chown(temp,0,grp.getgrnam('tokenbot-bridge').gr_gid);os.chmod(temp,0o640);temp.replace(target)
 
 
 if __name__=='__main__':main()

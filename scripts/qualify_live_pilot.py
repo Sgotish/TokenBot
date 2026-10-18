@@ -119,12 +119,16 @@ class Run:
                 if (await self.status())['active_requests']==0:break
                 await asyncio.sleep(1)
             await self.pool(original)
-    async def soak(self,minutes):
+    async def soak(self,minutes, *, economy=False, interval=30):
         # Keep the partner-selected pool; avoid changing routing during the endurance phase.
-        row,_=await self.call('extended-stream','Write integers 1 through 1200, one per line, without skipping or abbreviating. After 1200 write END-LONG-STREAM.')
-        self.log({'case':'extended-stream-check','pass':row['completed'] and exact_numbered_output(row['text'], 1200, 'END-LONG-STREAM'),'chars':len(row['text'])})
-        if not row['completed'] or not exact_numbered_output(row['text'], 1200, 'END-LONG-STREAM'):
-            return
+        self.log({'case':'soak-start','started_at':time.time(),'model':MODEL,'reasoning':'low',
+                  'minutes':minutes,'economy':economy,'interval_seconds':interval,
+                  'selected_pool':(await self.status())['selected_pool'],'changes_client_config':False})
+        if not economy:
+            row,_=await self.call('extended-stream','Write integers 1 through 1200, one per line, without skipping or abbreviating. After 1200 write END-LONG-STREAM.')
+            self.log({'case':'extended-stream-check','pass':row['completed'] and exact_numbered_output(row['text'], 1200, 'END-LONG-STREAM'),'chars':len(row['text'])})
+            if not row['completed'] or not exact_numbered_output(row['text'], 1200, 'END-LONG-STREAM'):
+                return
         start=time.monotonic();i=0
         while time.monotonic()-start<minutes*60:
             i+=1
@@ -132,14 +136,19 @@ class Run:
             self.log({'case':'soak-answer:'+str(i),'pass':row['completed'] and row['text'].strip()==str(i+7)})
             if not row['completed'] or row['text'].strip()!=str(i+7):
                 self.log({'case':'soak-stopped-on-failure','pass':False});break
-            await asyncio.sleep(min(30,max(0,minutes*60-(time.monotonic()-start))))
+            await asyncio.sleep(min(interval,max(0,minutes*60-(time.monotonic()-start))))
         self.log({'case':'soak-duration','seconds':round(time.monotonic()-start,2),'requests':i})
 
 async def main():
-    p=argparse.ArgumentParser(description=__doc__);p.add_argument('--config',default='.runtime/cloud-partner.json');p.add_argument('--report',required=True);p.add_argument('--soak-minutes',type=float,default=0);a=p.parse_args()
+    p=argparse.ArgumentParser(description=__doc__);p.add_argument('--config',default='.runtime/cloud-partner.json');p.add_argument('--report',required=True);p.add_argument('--soak-minutes',type=float,default=0)
+    p.add_argument('--economy',action='store_true',help='Skip the long-output prelude; short synthetic questions only')
+    p.add_argument('--interval',type=float,default=30,help='Seconds between completed requests')
+    a=p.parse_args()
+    if not 0 <= a.soak_minutes <= 60 or not 10 <= a.interval <= 300:
+        p.error('Soak must be 0–60 minutes; interval must be 10–300 seconds')
     run=Run(json.loads(Path(a.config).read_text()),a.report)
     try:
-        if a.soak_minutes:await run.soak(a.soak_minutes)
+        if a.soak_minutes:await run.soak(a.soak_minutes,economy=a.economy,interval=a.interval)
         else:await run.functional()
     finally:await run.client.aclose()
     failures=[r for r in run.rows if r.get('pass') is False or ('http' in r and not r.get('completed') and not r.get('cancelled_by_test'))]

@@ -8,6 +8,9 @@ jobs:
       - name: Check read-only desktop installation inspector
         shell: powershell
         run: ./tests/windows-native-inspection.ps1
+      - name: Check independent customer configuration and updates
+        shell: powershell
+        run: ./tests/windows-customer-setup.ps1
   operations:
     runs-on: ubuntu-latest
     strategy:

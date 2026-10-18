@@ -3,6 +3,25 @@ import urllib.error
 from scripts.collect_partner_usage import collect
 
 
+def test_customer_snapshot_uses_only_own_user_and_shared_sanitized_quota(tmp_path):
+    calls=[]
+    account=[{'label':'Pro','windows':[]}]
+    def panel(method,path,token=None,body=None):
+        calls.append(path)
+        if path=='/auth/login':
+            assert body=={'email':'customer@example.com','password':'synthetic'}
+            return {'access_token':'customer'}
+        assert token=='customer'
+        if path=='/usage/stats':return {'total_requests':3,'secret':'not-exported'}
+        if path.startswith('/usage?'):return {'items':[]}
+        raise AssertionError('Customer collector must never access admin/quota endpoints')
+    result=collect({'partner':{'email':'customer@example.com','password':'synthetic'},'accounts':{},
+        'groups':{},'snapshot_path':str(tmp_path/'missing.json')},panel,1800000000,account_snapshot=account)
+    assert result['accounts']==account and result['totals']['total_requests']==3
+    assert 'not-exported' not in json.dumps(result)
+    assert len(calls)==3
+
+
 def test_collector_queries_quota_without_model_calls_and_retains_failure_history(tmp_path):
     now = 1800000000
     snapshot = tmp_path/'status.json'

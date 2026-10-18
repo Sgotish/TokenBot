@@ -24,3 +24,11 @@ python scripts/qualify_live_pilot.py --report reports/endurance.jsonl --soak-min
 参考：[OpenAI 函数调用](https://developers.openai.com/api/docs/guides/function-calling)、[流式响应](https://developers.openai.com/api/docs/guides/streaming-responses)。
 
 Caddy 使用 SSE 自动刷新，不设置负数 `flush_interval`：负数配置会在客户端提前断开时保留后端请求，见 [Caddy Streaming 文档](https://caddyserver.com/docs/caddyfile/directives/reverse_proxy#streaming)。应用安全响应头使用纯 ASGI 中间件，避免隐藏队列等待中的断开事件。备份恢复 Caddyfile 时确保 caddy 用户仍有读取权限，再验证 reload 和实际运行配置。
+
+## 一小时低消耗测试
+
+```bash
+python scripts/qualify_live_pilot.py --report reports/hour.jsonl --soak-minutes 60 --economy --interval 60
+```
+
+跳过长输出预检，约每分钟一条短算术问题，gpt-6.1-sol / low；最多 60 分钟，失败立即停止，不自动重放。调用仅指定请求模型，不修改用户日常客户端或分析线程配置。记录实际 Token；短输出也存在上游固定指令开销，不能当作零消耗。云端 systemd 任务设 65 分钟硬截止、无自动重启；Mac 关机不影响测试。云服务器到公网域名的测试不能替代国内用户网络测试。

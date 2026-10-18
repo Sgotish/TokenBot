@@ -1,6 +1,7 @@
 """Trial API and private usage portal; bind loopback behind verified HTTPS."""
 import asyncio
 import hmac
+import hashlib
 import json
 import io
 import os
@@ -14,7 +15,7 @@ from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse, StreamingResponse
 from starlette.background import BackgroundTask
 
-from tokenbot.partner_portal import PoolState, install_portal
+from tokenbot.partner_portal import ClientRegistry, install_portal
 
 ROOT = Path(__file__).resolve().parents[1]
 MODEL = 'gpt-6.1-sol'
@@ -29,7 +30,7 @@ def create_app(config, transport=None):
     queue_timeout = float(config.get('queue_timeout_seconds', 30))
     if not 0 <= max_pending <= 16 or not 0 < queue_timeout <= 60:
         raise ValueError('Invalid bridge queue limits')
-    state = PoolState(config)
+    registry = ClientRegistry(config)
     client = httpx.AsyncClient(base_url='http://127.0.0.1:8180', trust_env=False,
                               follow_redirects=False, timeout=300, transport=transport)
 
@@ -41,24 +42,29 @@ def create_app(config, transport=None):
     app = FastAPI(docs_url=None, redoc_url=None, openapi_url=None, lifespan=lifespan)
 
     if config.get("public_origin"):
-        install_portal(app, config, state)
-    app.state.pool_state = state
+        install_portal(app, config, registry)
+    app.state.pool_state = registry.default
+    app.state.client_registry = registry
 
     def error(message, status, headers=None):
         return JSONResponse({'error': {'message': message, 'type': 'partner_test'}}, status_code=status, headers=headers)
 
     @app.api_route('/{path:path}', methods=['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS', 'HEAD'])
     async def proxy(path: str, request: Request):
-        if config['expires_at'] is not None and time.time() >= config['expires_at']:
-            return error('Test expired', 403)
         if request.client is None or request.client.host not in config['allowed_ips']:
             return error('Device not allowed', 403)
-        bearer_ok = hmac.compare_digest(request.headers.get('authorization', '').encode(), ('Bearer ' + config['key']).encode())
-        if not bearer_ok:
-            if not config.get('public_origin') or not app.state.portal_authorized(request):
-                return error('Invalid test key', 401)
-            if request.method != 'GET' and not app.state.portal_same_origin(request):
+        auth = request.headers.get('authorization', '')
+        if (config['expires_at'] is not None and time.time() >= config['expires_at'] and
+                hmac.compare_digest(auth.encode(), ('Bearer '+config['key']).encode())):
+            return error('Test expired', 403)
+        found = registry.resolve(key=auth[7:]) if auth.startswith('Bearer ') else None
+        if not auth:
+            found = app.state.portal_identity(request) if config.get('public_origin') else None
+            if found and request.method != 'GET' and not app.state.portal_same_origin(request):
                 return error('Invalid request origin', 403)
+        if not found:
+            return error('Invalid, disabled or expired access key', 401)
+        client_id, state = found
         if (request.query_params and not (request.method == 'GET' and path == 'v1/models'
                 and set(request.query_params) == {'client_version'})) or (request.method, path) not in {
                 ('GET', 'v1/models'), ('POST', 'v1/responses'), ('POST', 'v1/chat/completions')}:
@@ -92,7 +98,7 @@ def create_app(config, transport=None):
         queue_start = time.monotonic()
         if lock.locked():
             busy_headers = {'Retry-After': '5', 'X-TokenBot-Error-Source': 'bridge_capacity'}
-            if state.pending >= max_pending:
+            if sum(s.pending for s in registry.states.values()) >= max_pending:
                 return error('Server queue is full; subscription quota was not checked or consumed', 503, busy_headers)
             state.pending += 1
             try:
@@ -112,6 +118,10 @@ def create_app(config, transport=None):
         else:
             await lock.acquire()
         queue_start_acquired = time.monotonic()
+        current = registry.resolve(ident=client_id)
+        if current is None or current[1] is not state:
+            lock.release()
+            return error('Access disabled while waiting', 401)
         state.active += 1
         selected = state.selected
         upstream_key = state.pools[selected]["key"]
@@ -127,6 +137,10 @@ def create_app(config, transport=None):
             request_headers = {name: request.headers[name] for name in (
                 'session_id', 'conversation_id', 'x-codex-turn-state', 'x-codex-turn-metadata',
                 'originator', 'openai-beta', 'x-client-request-id') if name in request.headers}
+            if client_id != 'partner':
+                for name in ('session_id', 'conversation_id'):
+                    if name in request_headers:
+                        request_headers[name] = hashlib.sha256((client_id+':'+request_headers[name]).encode()).hexdigest()
             request_headers.update({'Authorization': 'Bearer ' + upstream_key, 'Content-Type': 'application/json'})
             upstream = await client.send(client.build_request('POST', '/' + path, content=body,
                 headers=request_headers), stream=True)

@@ -71,7 +71,59 @@ class PoolState:
                 'model': 'gpt-6.1-sol'}
 
 
-def install_portal(app, config, state):
+class ClientRegistry:
+    """Independent customer routing and usage; a missing/broken registry fails closed."""
+    def __init__(self, config):
+        self.config = config
+        self.default = PoolState(config)
+        self.states = {'partner': self.default}
+
+    def entries(self):
+        entries = {'partner': self.config}
+        if self.config.get('clients_path'):
+            data = json.loads(Path(self.config['clients_path']).read_text())
+            for ident, cfg in data['clients'].items():
+                if ident == 'partner' or not ident or not isinstance(cfg, dict):
+                    raise ValueError('Invalid customer registry')
+                entries[ident] = cfg
+        # A shared selection or usage file would defeat customer isolation.
+        for field in ('key', 'selection_path', 'snapshot_path'):
+            values = [x[field] for x in entries.values() if field in x]
+            if len(values) != len(set(values)):
+                raise ValueError('Duplicate customer configuration')
+        owned_keys = set()
+        for cfg in entries.values():
+            keys = {p['key'] for p in cfg.get('pools', {}).values()}
+            if owned_keys & keys:
+                raise ValueError('Customers must have separate upstream keys')
+            owned_keys.update(keys)
+        return entries
+
+    def resolve(self, *, key=None, ident=None):
+        try:
+            entries = self.entries()
+            for cid, cfg in entries.items():
+                if ((ident is not None and ident != cid) or
+                        (key is not None and not hmac.compare_digest(key.encode(), cfg['key'].encode()))):
+                    continue
+                if key is None and ident is None:
+                    return None
+                if cfg.get('enabled', True) is not True or (cfg.get('expires_at') is not None and time.time() >= cfg['expires_at']):
+                    return None
+                state = self.states.get(cid)
+                if state is None:
+                    state = self.states[cid] = PoolState(cfg)
+                elif state.config != cfg:
+                    if state.active or state.pending:
+                        return None
+                    state = self.states[cid] = PoolState(cfg)
+                return cid, state
+        except (OSError, ValueError, KeyError, TypeError, AttributeError):
+            return None
+        return None
+
+
+def install_portal(app, config, registry):
     sessions = {}
     failures = []
     origins = {config['public_origin'].rstrip('/'), *config.get('allowed_origins', [])}
@@ -83,16 +135,20 @@ def install_portal(app, config, state):
     def same_origin(request):
         return request.headers.get('origin') in origins
 
-    def authorized(request):
-        if config['expires_at'] is not None and time.time() >= config['expires_at']:
-            return False
+    def identity(request):
         auth = request.headers.get('authorization', '')
-        if hmac.compare_digest(auth.encode(), ('Bearer '+config['key']).encode()):
-            return True
+        if auth:
+            return registry.resolve(key=auth[7:]) if auth.startswith('Bearer ') else None
         value = request.cookies.get(COOKIE, '')
-        return sessions.get(hashlib.sha256(value.encode()).hexdigest(), 0) > time.time()
+        session = sessions.get(hashlib.sha256(value.encode()).hexdigest())
+        if session and session['expires'] > time.time():
+            found = registry.resolve(ident=session['client'])
+            if found and hmac.compare_digest(session['key_hash'], hashlib.sha256(found[1].config['key'].encode()).hexdigest()):
+                return found
+        return None
 
-    app.state.portal_authorized = authorized
+    app.state.portal_identity = identity
+    app.state.portal_authorized = lambda request: identity(request) is not None
     app.state.portal_same_origin = same_origin
 
     app.add_middleware(PortalSecurityHeaders)
@@ -123,8 +179,6 @@ def install_portal(app, config, state):
         failures[:] = [t for t in failures if t > now-60]
         if len(failures) >= 20:
             return JSONResponse({'error': '尝试过多，请一分钟后重试'}, status_code=429)
-        if config['expires_at'] is not None and now >= config['expires_at']:
-            return JSONResponse({'error': '接入已过期'}, status_code=403)
         try:
             raw = await bounded_body(request, 1024)
         except ValueError:
@@ -133,16 +187,18 @@ def install_portal(app, config, state):
             key = json.loads(raw).get('key', '')
         except (ValueError, AttributeError):
             key = ''
-        if not isinstance(key, str) or not hmac.compare_digest(key.encode(), config['key'].encode()):
+        found = registry.resolve(key=key) if isinstance(key, str) else None
+        if not found:
             failures.append(now)
             return JSONResponse({'error': '接入 Key 不正确'}, status_code=401)
         for k in list(sessions):
-            if sessions[k] <= now:
+            if sessions[k]['expires'] <= now:
                 del sessions[k]
         if len(sessions) >= 64:
             sessions.pop(next(iter(sessions)))
         value = secrets.token_urlsafe(32)
-        sessions[hashlib.sha256(value.encode()).hexdigest()] = now+43200
+        sessions[hashlib.sha256(value.encode()).hexdigest()] = {'expires':now+43200,'client':found[0],
+            'key_hash':hashlib.sha256(key.encode()).hexdigest()}
         result = JSONResponse({'ok': True})
         result.set_cookie(COOKIE, value, max_age=43200, secure=True, httponly=True, samesite='strict', path='/')
         return result
@@ -159,14 +215,17 @@ def install_portal(app, config, state):
     @app.get('/portal/api/status')
     @app.get('/v1/usage')
     async def status(request: Request):
-        if not authorized(request):
-            return JSONResponse({'error': '请使用搭档接入 Key 登录'}, status_code=401)
-        return state.status()
+        found = identity(request)
+        if not found:
+            return JSONResponse({'error': '请使用自己的接入 Key 登录'}, status_code=401)
+        return {**found[1].status(), 'client_label':found[1].config.get('label', 'TokenBots Partner Test')}
 
     @app.post('/portal/api/pool')
     async def choose(request: Request):
-        if not authorized(request) or not same_origin(request):
+        found = identity(request)
+        if not found or not same_origin(request):
             return JSONResponse({'error': '请重新登录'}, status_code=403)
+        state = found[1]
         try:
             raw = await bounded_body(request, 256)
         except ValueError:

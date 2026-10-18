@@ -8,13 +8,25 @@ import zipfile
 root = Path(__file__).resolve().parents[1]
 parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument('--validated-run', required=True, help='Successful Windows UI acceptance run URL')
+parser.add_argument('--client-config', type=Path, help='Private per-customer handoff JSON; never commit it')
+parser.add_argument('--output', type=Path, help='Private output ZIP; defaults to delivery/<client-id>.zip')
 args = parser.parse_args()
 if not args.validated_run.startswith('https://github.com/Sgotish/TokenBot/actions/runs/'):
     raise SystemExit('Expected this repository runtime validation URL')
-config = json.loads((root / '.runtime/cloud-partner.json').read_text())
-deployment = json.loads((root / '.runtime/cloud-deployment.json').read_text())
+config = json.loads((args.client_config or root / '.runtime/cloud-partner.json').read_text())
+deployment = {'base_url':config['base_url']} if args.client_config else json.loads((root / '.runtime/cloud-deployment.json').read_text())
+import re
+from urllib.parse import urlsplit
+origin=urlsplit(config['public_origin'])
+if (origin.scheme!='https' or not origin.netloc or origin.username or origin.password or origin.path or origin.query or origin.fragment
+        or deployment['base_url']!=config['public_origin']+'/v1' or not re.fullmatch(r'[A-Za-z0-9_-]{16,256}',config['key'])):
+    raise SystemExit('Invalid private customer configuration')
+client_id=config.get('client_id','partner')
+if not re.fullmatch(r'[a-z][a-z0-9-]{2,39}',client_id):
+    raise SystemExit('Invalid customer id')
 setup = (root / 'integrations/windows-codex/setup.ps1.template').read_text()
 setup = setup.replace('__BASE_URL__', deployment['base_url']).replace('__TEST_KEY__', config['key'])
+setup = setup.replace('TokenBots Partner Test','TokenBots '+client_id)
 readme = '''TokenBots Codex 原生用量菜单 — 定制测试副本
 
 这是 TokenBots 维护的定制客户端副本，不是 OpenAI 官方发布或支持的版本。
@@ -57,7 +69,8 @@ exit /b 1
 '''
 folder = root / 'delivery'
 folder.mkdir(mode=0o700, exist_ok=True)
-package = folder / 'TokenBots-Codex-Native-Usage.zip'
+package = args.output or folder / ('TokenBots-'+client_id+'-Native-Usage.zip' if args.client_config else 'TokenBots-Codex-Native-Usage.zip')
+package.parent.mkdir(mode=0o700,parents=True,exist_ok=True)
 with zipfile.ZipFile(package, 'w', zipfile.ZIP_DEFLATED) as archive:
     prefix = 'TokenBots-Codex-Native-Usage/'
     archive.writestr(prefix + 'README.txt', readme.encode('utf-8-sig'))
@@ -68,5 +81,6 @@ with zipfile.ZipFile(package, 'w', zipfile.ZIP_DEFLATED) as archive:
             archive.write(file, prefix + 'native-menu/' + file.name)
     archive.writestr(prefix + 'native-menu/native-access.json', json.dumps({'origin': config['public_origin'], 'key': config['key']}))
     archive.writestr(prefix + 'validation.txt', args.validated_run + '\nWindows UI fixture validation; live cloud bridge tested separately.\n')
+    archive.writestr(prefix + 'customer.txt', ('Customer: '+client_id+'\nThis package is private to this customer. Do not share it with other customers.\n').encode('utf-8'))
 package.chmod(0o600)
 print('Private native menu package created. No credentials printed.')
