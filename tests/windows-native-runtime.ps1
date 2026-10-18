@@ -96,7 +96,8 @@ $null = Invoke-Visible 'Open profile menu'
 Start-Sleep -Seconds 1
 $composer = Save-NativeEvidence 'composer'
 
-if (-not (Invoke-Visible 'Select effort')) { throw 'Native effort control unavailable.' }
+$effortButton = $composer | Where-Object { $_ -eq 'Select effort' -or $_ -match '^6\.1 Sol (Light|Standard|Extended|Heavy|Max|Ultra)$' } | Select-Object -First 1
+if (-not $effortButton -or -not (Invoke-Visible $effortButton)) { throw 'Native effort control unavailable.' }
 Start-Sleep -Seconds 2
 $picker = Save-NativeEvidence 'model-control'
 if (-not (Invoke-Visible 'Select model')) { throw 'Native model selector unavailable.' }
