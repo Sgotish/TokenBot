@@ -149,3 +149,23 @@ docker compose --env-file .env -f deploy/compose.yaml config --quiet
 - 本轮只归档结果和回填开发表，无新生产代码变更。原始 JSONL 与独立核对摘要已保存 reports/soak-20261018-60min.jsonl、reports/soak-20261018-summary.json；健康报告 reports/cloud-readiness-after-soak-20261018.json。原始报告 SHA256：a4e0e5c492dd3ed1c6221d8c7b5ed4fe93d7a62ce8c3123aa01c6b14a286acd6。
 - 边界：这是约每分钟短问答的持续可用性测试，不是一小时不停生成，也不是高并发压测。期间有独立客户部署及其他定点验证，不能描述成同一不可变版本的整小时测试。云端发起不等于广东 Windows 客户端实机验收，也不能证明永久不限流或不中断。
 - 下一步：保留广东客户实际设备任务验收、1–2 周试用以及其他待办；本次一小时跟进完成后暂停，不再自动重复消耗。
+
+## 2026-10-18：套餐余量精简、七模型与原生推理强度
+
+- 根因：桥接层只允许 gpt-6.1-sol，并用 “Use the verified test model” 拒绝其他模型；本地 TOML 改成 Astra 无法绕过这条服务器限制。现在 /v1/models 返回七个 Codex 用户模型，/v1/responses 校验后原样转发模型和强度，不做模型替换。
+- 七模型：GPT-6.1 Sol、GPT-6 Astra、GPT-6 Sol、GPT-6 Luna、GPT-5.6 Sol、GPT-5.6 Terra、GPT-5.6 Luna。Pro 7×5（low/medium/high/xhigh/max）共 35 次真实问答，全部答案 42、完成事件正常，返回 model 和 reasoning.effort 逐项与请求一致；另有 Pro 七次初测、Plus 七次公网验证全部通过。
+- Ultra 边界已实测：直接 API 发送 ultra 被上游 400 拒绝，故禁止伪装为可直传的 API 强度。实际 Codex 客户端在 Ultra 模式发送 xhigh；Mac 原生捆绑 CLI 的 Astra/high 和 Astra/ultra 均通过公网真实问答。该测试是固定短问答，未测试 Ultra 自动委派复杂任务。
+- 新配置默认 Astra/high，已有有效模型和强度保留。跨平台 CLI 测试覆盖真实 app-server 返回七个模型及完整强度列表、七个模型选择后的实际请求体、Ultra 客户端转换、安装与回退；服务优先级仍保持此前默认限制。
+- Windows 定制副本的使用情况仅保留当前套餐百分比、已知窗口进度条、自动/Plus/Pro 选择。隐藏账号编号、更新时间和调试说明；缺失不伪装为 100%，过期显示待更新。识别 TokenBots 开头的独立客户名称，修复仅 Partner Test 名称才显示菜单的问题。
+- 云端已在候选服务验证后通过 Caddy 临时切换更新主服务，随后恢复 8181、停止候选服务。13 项健康检查通过；partner、tester-a、tester-b 的凭据、隔离和选择均保留。没有改用户正在使用的本机 Codex 配置。
+- 初轮 Windows 验收 39173035271：精简余量、Plus/Pro 切换、保持打开时 81%→80% 自动刷新通过；模型列表阶段测试脚本误点强度滑杆导致失败，保留截图与日志，按实际显示标签打开强度弹窗、再进入 Select model 后重跑。未把失败运行写成全项通过。
+- 59 项 Python 测试、3 子测试及 5 个原生组件测试通过。提交 cae4c2d 的跨平台 CI 39173035472 全通过；后续 Windows 原生完整验收结果见下方最终记录。
+- 模型选择与推理强度支持依客户端和模型能力：[官方配置说明](https://learn.chatgpt.com/docs/config-file/config-reference)。保留原生模型选择器及滑杆，不另外伪造仅有名称的选择 UI。
+
+本地报告：reports/models-20261018-supported-efforts.jsonl、models-20261018-plus-public.jsonl、cli-astra-high-runtime.txt、cli-astra-ultra-runtime.txt；均为合成测试，不含接入 Key。
+
+- 后续原生 UI 测试修正：实际强度入口标签为“6.1 Sol Light”，原生自定义滑杆使用名为 Power 的可聚焦菜单项处理左右键，旁边的“1 of 5”只是不可聚焦的状态文本。保留失败运行 39173312269、39173534346、39173787175 的截图和日志，不把脚本定位失败计为产品验收通过。
+
+- 最终 Windows 原生运行 [39174054148](https://github.com/Sgotish/TokenBot/actions/runs/39174054148) 全通过（8bf1ec4）：七个目标模型列表、选择 Astra、原生 Power 控件从 Light 调至 Ultra、精简套餐余量及保持打开时 81%→80% 自动刷新均有实机截图。此 UI 测试使用隔离的固定数据服务；真实公网模型调用证据见上文，未把两种测试混为同一端到端调用。
+- 同提交跨平台检查 [39174054284](https://github.com/Sgotish/TokenBot/actions/runs/39174054284) 全通过。Windows 原生副本支持原生 Ultra 模式；各模型具体档位保持客户端行为，不虚构每个模型都有相同档位。
+- 三个独立客户原生安装包已按成功运行生成；ZIP 完整性、包内脚本与当前源码一致、三个 Key 不同均通过本地核对。跨平台配置包也已更新。交付文件私有，不推入仓库。搭档需要安装新副本后新建对话；云端七模型支持已生效。
