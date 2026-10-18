@@ -1,0 +1,26 @@
+name: native client runtime
+on: workflow_dispatch
+jobs:
+  windows-client:
+    runs-on: windows-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - name: Prepare isolated latest client and launch
+        shell: powershell
+        run: |
+          $output = & ./integrations/windows-codex/native-menu/install.ps1 -PrepareOnly
+          $appDirectory = $output[-1]
+          & ./tests/windows-native-runtime.ps1 -AppDirectory $appDirectory
+      - name: Save diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: native-client-runtime
+          path: |
+            reports/native-*
+            ~/AppData/Local/TokenBots/Codex-custom-profile/logs/**
+          if-no-files-found: warn
