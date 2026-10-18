@@ -1,6 +1,13 @@
 name: pilot checks
 on: [push, pull_request]
 jobs:
+  windows-inspection:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check read-only desktop installation inspector
+        shell: powershell
+        run: ./tests/windows-native-inspection.ps1
   operations:
     runs-on: ubuntu-latest
     strategy:
