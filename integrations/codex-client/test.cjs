@@ -47,6 +47,16 @@ test('rollback refuses overwriting changes made after setup',async t=>{
  const f=await fixture(t);await client.configure(f);fs.appendFileSync(path.join(f.home,'config.toml'),'\n# new preference\n');
  assert.throws(()=>client.rollback(f.home),/Configuration changed/);
 });
+test('active profile preserves its permissions and settings without overriding the new provider',async t=>{
+ const f=await fixture(t),file=path.join(f.home,'config.toml');
+ const original='profile="work"\nmodel="old"\n[features]\na=true\n';
+ const profile='model_provider="old_proxy"\napproval_policy="on-request"\n[features]\nb=true\n';
+ fs.writeFileSync(file,original);fs.writeFileSync(path.join(f.home,'work.config.toml'),profile);
+ await client.configure(f);const d=parse(fs.readFileSync(file,'utf8'));
+ assert.equal(d.profile,undefined);assert.equal(d.approval_policy,'on-request');assert.deepEqual({...d.features},{a:true,b:true});assert.equal(d.model_provider,client.PROVIDER);
+ assert.equal(fs.readFileSync(path.join(f.home,'work.config.toml'),'utf8'),profile);
+ client.rollback(f.home);assert.equal(fs.readFileSync(file,'utf8'),original);
+});
 test('reject insecure origins, embedded credentials and redirect before token forwarding',async t=>{
  const f=await fixture(t);assert.throws(()=>client.validateAccess(f.access));
  assert.throws(()=>client.validateAccess({...f.access,public_origin:'https://user:pass@example.com',base_url:'https://user:pass@example.com/v1'}));

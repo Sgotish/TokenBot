@@ -22,8 +22,23 @@ function validateAccess(d,localTest=false){
   return {public_origin:u.origin,base_url:d.base_url,key:d.key,label:typeof d.label==='string'?d.label:'TokenBots'};
 }
 function defaultHome(target){return target==='cli'?path.join(os.homedir(),'.tokenbots-codex'):path.resolve(process.env.CODEX_HOME||path.join(os.homedir(),'.codex'));}
-function mergeConfig(old,access,target){
+function mergeTables(base,extra){
+  const table=v=>v && (Object.getPrototypeOf(v)===Object.prototype||Object.getPrototypeOf(v)===null);
+  for(const [key,value] of Object.entries(extra)){
+    if(table(value)&&table(base[key]))mergeTables(base[key],value);
+    else base[key]=value;
+  }
+  return base;
+}
+function mergeConfig(old,access,target,activeProfile){
   let d;try{d=parse(old||'');}catch{throw Error('Invalid existing TOML. Nothing changed.');}
+  if(d.profile){
+    if(typeof activeProfile!=='string')throw Error('Invalid active profile. Cannot configure without preserving its settings.');
+    try{d=mergeTables(d,parse(activeProfile));}catch{throw Error('Invalid active profile TOML. Nothing changed.');}
+    // Preserve the effective profile settings in the root, then select this connection.
+    // The original profile file is untouched; rollback restores its selection byte-for-byte.
+    delete d.profile;
+  }
   d.model='gpt-6.1-sol';d.model_reasoning_effort='medium';d.model_provider=PROVIDER;delete d.service_tier;
   d.model_providers||={};d.model_providers[PROVIDER]={name:access.label,base_url:access.base_url,wire_api:'responses',
     ...(target==='cli'?{env_key:'TOKENBOTS_API_KEY'}:{experimental_bearer_token:access.key}),
@@ -41,7 +56,11 @@ async function configure({home,access,target,localTest=false}){
   if(!['cli','desktop'].includes(target))throw Error('Choose cli or desktop.');
   access=validateAccess(access,localTest);
   const file=path.join(home,'config.toml'),af=path.join(home,'tokenbots-access.json');
-  const before=read(file),beforeAccess=read(af),next=mergeConfig(before,access,target);
+  const before=read(file),beforeAccess=read(af);
+  let profile;try{profile=parse(before||'').profile;}catch{throw Error('Invalid existing TOML. Nothing changed.');}
+  if(profile && (typeof profile!=='string'||profile==='..'||/[\\/]/.test(profile)))throw Error('Invalid profile filename. Nothing changed.');
+  const activeProfile=profile?read(path.join(home,profile+'.config.toml')):undefined;
+  const next=mergeConfig(before,access,target,activeProfile);
   const models=await(await request(access,'/v1/models')).json();
   if(!models.data?.some(m=>m.id==='gpt-6.1-sol'))throw Error('Model unavailable. Nothing changed.');
   const na=JSON.stringify({...access,target},null,2)+'\n';
