@@ -85,3 +85,8 @@ if (-not (Invoke-Visible 'Pro')) { throw 'Native Pro selector unavailable.' }
 Start-Sleep -Seconds 3
 $switched = Save-NativeEvidence 'pro'
 if (-not ($switched -match 'Pro 81%')) { throw 'Native Pro selection did not update remaining usage.' }
+
+# A new upstream value must reach the already-open menu without reopening it.
+Start-Sleep -Seconds 35
+$refreshed = Save-NativeEvidence 'auto-refresh'
+if (-not ($refreshed -match 'Pro 80%')) { throw 'Open native menu did not refresh changed quota automatically.' }

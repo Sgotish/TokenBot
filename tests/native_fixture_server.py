@@ -6,14 +6,17 @@ from datetime import datetime, timezone
 
 class Handler(BaseHTTPRequestHandler):
     selected_pool = "plus"
+    pro_reads = 0
     def do_GET(self):
+        if self.path == '/v1/usage' and Handler.selected_pool == 'pro':
+            Handler.pro_reads += 1
         resets = datetime.fromtimestamp(time.time() + 3600, timezone.utc).isoformat()
         data = {'selected_pool': Handler.selected_pool, 'snapshot_stale': False, 'active_requests': 0,
                 'accounts': [{'label': 'Plus · 账号 2', 'snapshot_stale': False, 'windows': [
                     {'label': '5 小时窗口', 'remaining_percent': 94, 'stale': False, 'resets_at': resets},
                     {'label': '7 天窗口', 'remaining_percent': 97, 'stale': False, 'resets_at': resets},
                 ]}, {'label': 'Pro · 账号 1', 'snapshot_stale': False, 'windows': [
-                    {'label': '5 小时窗口', 'remaining_percent': 81, 'stale': False, 'resets_at': resets},
+                    {'label': '5 小时窗口', 'remaining_percent': 81 if Handler.pro_reads <= 1 else 80, 'stale': False, 'resets_at': resets},
                     {'label': '7 天窗口', 'remaining_percent': 90, 'stale': False, 'resets_at': resets},
                 ]}], 'records': []}
         body = json.dumps(data).encode()
