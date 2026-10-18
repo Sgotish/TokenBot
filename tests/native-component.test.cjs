@@ -19,7 +19,7 @@ function account(label, percent, stale = false) {
 test('native summary follows selected pool with actual backend account labels', () => {
   const result = render({selected_pool: 'plus', accounts: [account('Pro · 账号 1', 91), account('Plus · 账号 2', 94)]});
   assert.equal(result.children[0].children, '使用情况');
-  assert.equal(result.children[0].rightIcon.children, 'Plus · 账号 2 94%');
+  assert.equal(result.children[0].rightIcon.children, 'Plus 94%');
 });
 test('stale or expired windows cannot appear as current remaining percentage', () => {
   let a = account('Plus · 账号 2', 94, true);

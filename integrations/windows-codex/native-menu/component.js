@@ -35,7 +35,7 @@ function TokenBotsNativeUsage() {
     return `${minimum}%${fresh.length < windows.length ? '（部分窗口）' : ''}`;
   };
   const accounts = (status?.accounts || []).filter(a => status.selected_pool === 'auto' || a.label.toLowerCase().split(/[ ·]/)[0] === status.selected_pool);
-  const summary = error || (!status ? '读取中…' : accounts.map(a => `${a.label} ${accountPercent(a)}`).join(' · ') || '未知');
+  const summary = error || (!status ? '读取中…' : accounts.map(a => `${a.label.split(' ·')[0]} ${accountPercent(a)}`).join(' · ') || '未知');
   const select = async pool => {
     if (busy) return;
     setBusy(true);

@@ -22,6 +22,13 @@ $fixture = Start-Process python -ArgumentList 'tests/native_fixture_server.py' -
 $app = Start-Process (Join-Path $appDir 'ChatGPT.exe') -ArgumentList '--force-renderer-accessibility' -WorkingDirectory $appDir -RedirectStandardOutput (Join-Path $PWD 'reports\native-stdout.txt') -RedirectStandardError (Join-Path $PWD 'reports\native-stderr.txt') -PassThru
 Start-Sleep -Seconds 35
 Add-Type -AssemblyName UIAutomationClient,UIAutomationTypes
+Add-Type @'
+using System.Runtime.InteropServices;
+public class NativeTestMouse {
+ [DllImport("user32.dll")] public static extern bool SetCursorPos(int x,int y);
+ [DllImport("user32.dll")] public static extern void mouse_event(uint flags,uint x,uint y,uint data,System.UIntPtr extra);
+}
+'@
 function Invoke-Visible([string]$name) {
     $condition = New-Object Windows.Automation.PropertyCondition([Windows.Automation.AutomationElement]::NameProperty, $name)
     $elements = [Windows.Automation.AutomationElement]::RootElement.FindAll([Windows.Automation.TreeScope]::Descendants,$condition)
@@ -31,6 +38,13 @@ function Invoke-Visible([string]$name) {
         if ($element.TryGetCurrentPattern([Windows.Automation.InvokePattern]::Pattern,[ref]$pattern)) { $pattern.Invoke(); return $true }
         if ($element.TryGetCurrentPattern([Windows.Automation.SelectionItemPattern]::Pattern,[ref]$pattern)) { $pattern.Select(); return $true }
         if ($element.TryGetCurrentPattern([Windows.Automation.TogglePattern]::Pattern,[ref]$pattern)) { $pattern.Toggle(); return $true }
+        $rect = $element.Current.BoundingRectangle
+        if ($rect.Width -gt 0 -and $rect.Height -gt 0) {
+            [NativeTestMouse]::SetCursorPos([int]($rect.X+$rect.Width/2),[int]($rect.Y+$rect.Height/2)) | Out-Null
+            [NativeTestMouse]::mouse_event(2,0,0,0,[UIntPtr]::Zero)
+            [NativeTestMouse]::mouse_event(4,0,0,0,[UIntPtr]::Zero)
+            return $true
+        }
     }
     return $false
 }
