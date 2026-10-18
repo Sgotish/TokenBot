@@ -20,7 +20,11 @@
 
 [官方网关接入文档](https://learn.chatgpt.com/docs/enterprise/connect-to-a-gateway)描述 provider 配置；[插件清单文档](https://developers.openai.com/plugins/build/plugins)描述 skills、MCP、界面资源及生命周期 hook。目前这些已检查资料没有提供第三方头像菜单用量挂载点，这并不证明所有未来版本均不支持。
 
-下一步需要搭档的实际 Windows 安装信息。运行只读 `inspect-native-menu.cmd` 会生成 `TokenBots-native-menu-report.json`：安装类型、应用版本、签名状态、菜单资源哈希和特征。它不读取登录凭据、配置、聊天或浏览器数据，不联网、不修改应用，不要求管理员权限。把报告私发运营者，用于判断是否存在兼容且可回退的客户端方案。不要把“检测到菜单代码”当成“已经可以安全修改”。在对应 Windows 客户端真实显示前，该需求保持未完成。
+不再要求搭档提供版本或安装来源。运营者直接从[官方 Windows 部署文档](https://learn.chatgpt.com/docs/enterprise/windows-deployment)下载最新包检查。该文档明确：官网入口和离线下载使用 Store 签名包，当前没有独立 MSI 或非 Store EXE 桌面包。因此“官网安装还是 Store 安装”不是这项开发的必要前置问题。
+
+2026-10-17 已下载并检查官方最新 x64 MSIX（包版本 `26.1013.4894.0`，应用版本 `26.1013.40934`）。Windows 菜单同样将 provider 显示与官方账号用量分开，并校验用量对应的账号及用户；添加网关端点或调整 provider 名称不会将我们的号池数据接到官方菜单。包包含签名文件，菜单资源有 SHA-256 完整性元数据；本次只读检查验证了所读取资源的哈希，没有在 Windows 上验证签名信任或启动修改版程序。详细证据与复核命令见 [Windows 最新包核查](windows-native-menu.md)。
+
+`inspect-native-menu.cmd` 仅保留为可选的本机诊断工具，不再要求搭档运行或回传报告。原生头像菜单需求仍未完成：目前没有已验证的客户端扩展或补丁，也没有把独立用量网页当成菜单完成品。在真实 Windows 客户端验证前，不应交付声称能添加该菜单的一键补丁。
 
 仓库中只有无密钥模板；真实测试包由 `scripts/build_cloud_handoff.py` 在运营者本机生成，放在被 Git 忽略的 `delivery/` 中。不要把私发包、临时 Key、订阅授权或管理员资料上传到仓库。
 
