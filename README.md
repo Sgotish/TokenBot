@@ -15,6 +15,7 @@
 - [选型与范围](docs/architecture.md)、[部署运维](docs/operations.md)、[客户接入](docs/client-guide.md)、[人工验收](docs/acceptance.md)、[成本规则](docs/costs.md)。
 - [验收状态](docs/verification.md)：区分实际已测、未测及阻塞项。
 - [订阅接入方案](docs/subscription-pilot.md)：Plus/Pro 授权、分组、容量与计费边界。
+- [客户 Token 用量与计价研究方案](docs/customer-token-billing-plan.md)：客户用量展示、模拟计价、账本接入与套餐成本研究；尚未启用正式收费。
 
 ## Linux / Docker
 
