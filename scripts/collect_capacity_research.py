@@ -6,12 +6,14 @@ import os
 from pathlib import Path
 import sys
 import time
+import re
+from collections import Counter
 import urllib.parse
 import urllib.request
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from tokenbot.client import NoRedirect
-from tokenbot.capacity_research import connect, usage_row, save_scan, save_quota, report, prune
+from tokenbot.capacity_research import connect, usage_row, save_scan, save_quota, report, prune, customer_visual
 
 
 def panel_client(deadline):
@@ -72,11 +74,15 @@ def collect(db, config, panel, snapshot, now):
     # First run backfills 31 days; later polls overlap at least two days,
     # or backfill the entire downtime. Days are UTC as required by upstream.
     start = min(now-2*86400, last-86400) if last is not None else now-31*86400
+    if db.execute("SELECT value FROM meta WHERE key='visual_schema'").fetchone() is None:
+        start = now-31*86400  # Backfill user IDs before exporting customer charts.
     start = int(start//86400)*86400
     token = panel('POST', '/auth/login', body=config['admin'])['access_token']
     rows = fetch_usage(panel, token, start, now)
     # An admin scan sees all accounts; persist only the configured account pool.
     save_scan(db, [r for r in rows if r['account'] in config['accounts']], start, now, now)
+    with db:
+        db.execute("INSERT OR REPLACE INTO meta VALUES ('visual_schema','1')")
     prune(db, now)
 
 
@@ -92,6 +98,29 @@ def write_report(path, data):
         os.chown(temp, 0, grp.getgrnam('tokenbot-bridge').gr_gid)
     os.chmod(temp, 0o640)
     temp.replace(path)
+
+
+def export_customers(db, config, state, now, failed):
+    profiles = {}
+    directory = Path(config.get('customers_dir') or '/opt/tokenbot-pilot/private/customers')
+    for file in directory.glob('web-*.json'):
+        if not re.fullmatch(r'web-[0-9a-f]{32}', file.stem):
+            continue
+        user_id = json.loads(file.read_text(encoding='utf-8')).get('user_id')
+        if type(user_id) is int and user_id > 0:
+            profiles[file.stem] = user_id
+    counts = Counter(profiles.values())
+    target = state/'customers'
+    target.mkdir(mode=0o750, exist_ok=True)
+    if os.name == 'posix':
+        import grp
+        os.chown(target, 0, grp.getgrnam('tokenbot-bridge').gr_gid)
+        os.chmod(target, 0o750)
+    for cid, user_id in profiles.items():
+        visual = customer_visual(db, user_id, now) if counts[user_id] == 1 else None
+        if visual is not None:
+            visual['stale'] = visual['stale'] or failed
+        write_report(target/(cid+'.json'), {'owner_user_id': user_id, 'visualization': visual})
 
 
 def main():
@@ -115,6 +144,7 @@ def main():
         data = report(db, config['accounts'], now)
         data['collection_failed'] = failed
         write_report(state/'report.json', data)
+        export_customers(db, config, state, now, failed)
     if failed:
         raise SystemExit('Research collection incomplete; retained history, coverage not advanced.')
     print('Capacity research snapshot updated; no model requests or billing mutations.')

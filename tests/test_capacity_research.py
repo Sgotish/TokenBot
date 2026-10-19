@@ -8,10 +8,64 @@ import pytest
 from tokenbot.capacity_research import (TOKENS, connect, usage_row, save_scan, save_quota,
                                        measure, report, pricing, covered)
 from tokenbot.research_app import create_app
-from scripts.collect_capacity_research import fetch_usage, collect
+from scripts.collect_capacity_research import fetch_usage, collect, export_customers
+from tokenbot.capacity_research import customer_visual, usage_visual
 from scripts.install_capacity_research import caddy_candidate, wait_for_auth_gate
 
 BASE = 1800000000
+
+
+def test_customer_visualization_is_scoped_and_does_not_turn_gaps_into_zero(tmp_path):
+    db = connect(tmp_path/'history.db')
+    rows = [usage_row(raw(user_id=101)), usage_row(raw(2, user_id=202, model='other-private-model'))]
+    save_scan(db, rows, BASE, BASE+2000, BASE+2000)
+    visual = customer_visual(db, 101, BASE+2000)
+    assert visual['billing_enabled'] is False
+    for period in visual['periods']:
+        assert period['tokens'] == 2500000 and period['requests'] == 1
+        assert list(period['models']) == ['sol']
+        assert not period['complete']
+    assert any(not b['complete'] and b['tokens'] == 0 for b in visual['periods'][0]['buckets'])
+    assert 'other-private-model' not in json.dumps(visual)
+    assert 'user_id' not in json.dumps(visual)
+    with pytest.raises(ValueError):
+        customer_visual(db, True, BASE+2000)
+
+
+def test_missing_counter_and_identity_cannot_claim_complete_customer_usage(tmp_path):
+    db = connect(tmp_path/'history.db')
+    rows = [usage_row(raw(user_id=101, output_tokens=None)), usage_row(raw(2))]
+    save_scan(db, rows, BASE-31*86400, BASE+3000, BASE+3000)
+    visual = customer_visual(db, 101, BASE+3000)
+    assert visual['periods'][0]['tokens'] == 2000000
+    assert visual['periods'][0]['invalid_records'] == 1
+    assert not any(p['complete'] for p in visual['periods'])
+    # Complete scans with no calls are genuine zero use, unlike an uncovered gap.
+    empty = usage_visual([], [{'start':BASE-31*86400,'end':BASE+3000,'collected':BASE+3000}], BASE+3000)
+    assert all(p['complete'] and p['tokens'] == 0 for p in empty['periods'])
+
+
+def test_customer_exports_fail_closed_on_shared_identity(tmp_path, monkeypatch):
+    # Bypass POSIX ownership only in this filesystem fixture.
+    import scripts.collect_capacity_research as collector
+    monkeypatch.setattr(collector, 'write_report', lambda path,data: path.write_text(json.dumps(data)))
+    if collector.os.name == 'posix':
+        import grp
+        monkeypatch.setattr(grp, 'getgrnam', lambda name: type('Group', (), {'gr_gid': 0})())
+        monkeypatch.setattr(collector.os, 'chown', lambda *args: None)
+    profiles = tmp_path/'profiles';profiles.mkdir()
+    a,b = 'web-'+'a'*32, 'web-'+'b'*32
+    for cid in (a,b):
+        (profiles/(cid+'.json')).write_text(json.dumps({'user_id':101,'key':'must-not-export'}))
+    db=connect(tmp_path/'history.db')
+    export_customers(db, {'customers_dir':str(profiles)}, tmp_path, BASE, False)
+    for cid in (a,b):
+        result=json.loads((tmp_path/'customers'/(cid+'.json')).read_text())
+        assert result['visualization'] is None
+        assert 'must-not-export' not in json.dumps(result)
+    (profiles/(b+'.json')).write_text(json.dumps({'user_id':202}))
+    export_customers(db, {'customers_dir':str(profiles)}, tmp_path, BASE, True)
+    assert json.loads((tmp_path/'customers'/(a+'.json')).read_text())['visualization']['stale']
 
 
 def iso(t):

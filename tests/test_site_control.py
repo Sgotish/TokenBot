@@ -50,6 +50,26 @@ class SiteControlTests(unittest.TestCase):
             self.assertEqual(client.post('/internal/site/status',json={'uid':'../../etc'},headers=h).status_code,400)
             self.assertEqual(client.post('/internal/site/status',content='x'*5000,headers=h).status_code,413)
             self.assertFalse(client.post('/internal/site/status',json={'uid':self.a},headers=h).json()['configured'])
+    def test_usage_report_owner_binding_and_missing_data(self):
+        self.c.research_state=self.root/'research';self.c.research_state.mkdir()
+        (self.c.research_state/'customers').mkdir()
+        (self.root/'private/customers').mkdir()
+        self.assertFalse(self.c.run('usage-visualization',{'uid':self.a})['configured'])
+        self.issue(self.a);self.issue(self.b)
+        for uid,user_id in [(self.a,101),(self.b,202)]:
+            cid='web-'+uid
+            (self.root/'private/customers'/(cid+'.json')).write_text(json.dumps({'user_id':user_id}))
+            (self.c.research_state/'customers'/(cid+'.json')).write_text(json.dumps({
+                'owner_user_id':user_id,'visualization':{'generated_at':1,'periods':[{'tokens':user_id}]}}))
+        data=self.c.run('usage-visualization',{'uid':self.a})
+        self.assertEqual(data['periods'],[{'tokens':101}]);self.assertTrue(data['stale'])
+        self.assertNotIn('owner_user_id',data)
+        (self.root/'private/customers'/('web-'+self.a+'.json')).write_text('{"user_id":202}')
+        with self.assertRaises(ControlError) as error:self.c.run('usage-visualization',{'uid':self.a})
+        self.assertEqual(error.exception.status,503)
+        with self.assertRaises(ControlError):self.c.run('admin-research',{'uid':self.a})
+        (self.c.research_state/'report.json').write_text('{"generated_at":1,"accounts":[]}')
+        self.assertTrue(self.c.run('admin-research',{'uid':self.a})['report_stale'])
     def test_private_bundle(self):
         source=Path(__file__).resolve().parents[1]
         for rel in ['integrations/codex-client/dist/tokenbots.cjs','integrations/codex-client/node_modules/smol-toml/LICENSE']:

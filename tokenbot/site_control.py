@@ -27,10 +27,29 @@ class ControlError(Exception):
 
 
 class SiteControl:
-    def __init__(self, root, secret, provision=None):
+    def __init__(self, root, secret, provision=None, research_state='/var/lib/tokenbot-research'):
         self.root, self.secret = Path(root), secret
         self.provision = provision or self._provision
         self.private = self.root/'private'
+        self.research_state = Path(research_state)
+
+    def research(self, cid=None):
+        try:
+            if cid is None:
+                result = json.loads((self.research_state/'report.json').read_text())
+                result['report_stale'] = time.time()-result.get('generated_at', 0) > 900
+                return result
+            source = json.loads((self.private/'customers'/(cid+'.json')).read_text())
+            result = json.loads((self.research_state/'customers'/(cid+'.json')).read_text())
+            if type(source.get('user_id')) is not int or source['user_id'] != result.get('owner_user_id'):
+                raise ControlError('用量身份待校验。', 503)
+            visual = result.get('visualization')
+            if visual is None:
+                raise ControlError('用量身份待校验。', 503)
+            visual['stale'] = visual.get('stale', True) or time.time()-visual.get('generated_at', 0)>900
+            return visual
+        except (OSError, ValueError):
+            raise ControlError('正在准备可视化数据，请稍后刷新。', 503) from None
 
     def _provision(self, cid):
         r = subprocess.run([str(self.root/'venv/bin/python'), str(self.root/'scripts/provision_cloud_client.py'),
@@ -71,6 +90,10 @@ class SiteControl:
             fcntl.flock(lock, fcntl.LOCK_EX)
             fcntl.flock(provision_lock, fcntl.LOCK_EX)
             main, path, registry = self.registry()
+            if action == 'admin-research':
+                # Only the trusted website backend may call this route; it
+                # checks the logged-in actor's admin role before forwarding.
+                return self.research()
             if action == 'admin-summary':
                 return {'items':[{'client_id':k, **self.public(v)} for k,v in registry['clients'].items()
                                  if k.startswith('web-')]}
@@ -86,6 +109,8 @@ class SiteControl:
                 main, path, registry = self.registry()
                 cfg = registry['clients'].get(cid)
             if not cfg:
+                if action == 'usage-visualization':
+                    return {'configured': False, 'periods': [], 'billing_enabled': False}
                 if action == 'status':
                     return {'enabled':True,'configured':False,'keys':[], 'models':discovery()['data'],
                             'base_url':'https://pilot.tokenbots.top/v1','pricing_mode':'test',
@@ -100,6 +125,8 @@ class SiteControl:
                 raise ControlError('测试接入已停用。', 403)
             if action == 'status':
                 return {'configured':True, **self.public(cfg)}
+            if action == 'usage-visualization':
+                return {'configured': True, **self.research(cid)}
             aliases = cfg.setdefault('aliases', {})
             if action == 'create-key':
                 kid, label = data.get('request_id',''), data.get('label','')

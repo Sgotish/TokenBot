@@ -73,7 +73,9 @@ def usage_row(raw):
             if isinstance(v, str) and 0 < len(v) <= 100:
                 return v
         return 'unknown'
+    user_id = raw.get('user_id')
     return {'id': raw['id'], 'account': str(account), 'stamp': stamp,
+            'user_id': user_id if type(user_id) is int and user_id > 0 else None,
             'model': model, 'effort': field('upstream_reasoning_effort', 'reasoning_effort'),
             'tier': field('service_tier'), 'duration_ms': duration,
             'valid': valid, **counts}
@@ -216,6 +218,49 @@ def pricing(monthly_tokens, account_cost, overhead, utilization, fee, margin):
             'sold_tokens_per_month': monthly_tokens*utilization}
 
 
+def usage_visual(rows, scans, now, identity_complete=True):
+    """Aggregate only the supplied scope. Never include individual identities."""
+    periods = []
+    for name, span, count in [('5h', 18000, 30), ('7d', 604800, 28), ('30d', 2592000, 30)]:
+        start, step = now-span, span/count
+        buckets = [{'stamp': start+i*step, 'tokens': 0, 'requests': 0} for i in range(count)]
+        models = defaultdict(lambda: {'tokens': 0, 'requests': 0})
+        composition = dict.fromkeys(TOKENS, 0)
+        invalid = 0
+        for row in rows:
+            if not start < row['stamp'] <= now:
+                continue
+            tokens = total(row)
+            bucket = buckets[min(count-1, int((row['stamp']-start)/step))]
+            bucket['tokens'] += tokens
+            bucket['requests'] += 1
+            models[row['model']]['tokens'] += tokens
+            models[row['model']]['requests'] += 1
+            invalid += not row['valid']
+            for key in TOKENS:
+                if type(row.get(key)) is int and row[key] >= 0:
+                    composition[key] += row[key]
+        for bucket in buckets:
+            bucket['complete'] = identity_complete and bucket['stamp'] < now-GUARD and covered(
+                scans, bucket['stamp'], min(bucket['stamp']+step, now-GUARD))
+        periods.append({'period': name, 'from': start, 'to': now, 'buckets': buckets,
+            'tokens': sum(b['tokens'] for b in buckets), 'requests': sum(b['requests'] for b in buckets),
+            'models': dict(sorted(models.items())), 'composition': composition,
+            'invalid_records': invalid, 'complete': identity_complete and covered(scans, start, now-GUARD)})
+    last = max((s['collected'] for s in scans), default=None)
+    return {'generated_at': now, 'last_complete_scan': last,
+            'stale': last is None or now-last > 900, 'periods': periods, 'billing_enabled': False}
+
+
+def customer_visual(db, user_id, now):
+    if type(user_id) is not int or user_id <= 0:
+        raise ValueError('Invalid customer identity')
+    all_rows = [json.loads(r[0]) for r in db.execute('SELECT payload FROM usage WHERE stamp > ?', (now-2592000,))]
+    return usage_visual([r for r in all_rows if r.get('user_id') == user_id],
+                        list(db.execute('SELECT * FROM scans')), now,
+                        identity_complete=all(r.get('user_id') is not None for r in all_rows))
+
+
 def report(db, accounts, now):
     scans = list(db.execute('SELECT * FROM scans'))
     items = []
@@ -233,7 +278,12 @@ def report(db, accounts, now):
                     if b['cohort']:
                         groups[tuple(b['cohort'])].append(b)
                 estimates.extend(estimate(v, seconds, list(k)) for k, v in sorted(groups.items()))
+            history = [dict(point) for point in q if point['stamp'] >= now-86400]
+            for point in history:
+                point.pop('account', None)
+                point.pop('seconds', None)
             windows.append({'seconds': seconds, 'snapshots': len(q), 'last_snapshot': dict(q[-1]) if q else None,
+                            'history': history,
                             'estimates': estimates, 'excluded': rejected})
         actual = []
         for name, span in [('5h', 18000), ('7d', 604800), ('30d', 2592000)]:
@@ -249,7 +299,8 @@ def report(db, accounts, now):
                         m[k] += r[k]
             actual.append({'period': name, 'complete': covered(scans, now-span, now-GUARD),
                            'models': dict(sorted(by_model.items()))})
-        items.append({'account': str(aid), 'label': label, 'actual': actual, 'windows': windows})
+        items.append({'account': str(aid), 'label': label, 'actual': actual, 'windows': windows,
+                      'visualization': usage_visual(rows, scans, now)})
     last = max((s['collected'] for s in scans), default=None)
     return {'version': 1, 'generated_at': now, 'last_complete_scan': last,
             'ledger_stale': last is None or now-last > 900,

@@ -3,7 +3,7 @@
   const $ = id => document.getElementById(id);
   let key = '', data = null;
   const number = x => Number.isFinite(x) ? x.toLocaleString('zh-CN', {maximumFractionDigits: 2}) : '—';
-  const million = x => Number.isFinite(x) ? number(x / 1e6) + ' M' : '—';
+  const million = x => !Number.isFinite(x) ? '—' : x >= 1e6 ? number(x / 1e6) + ' M' : x >= 1000 ? number(x / 1000) + ' K' : number(x);
   const money = x => x.toLocaleString('zh-CN', {minimumFractionDigits: 2, maximumFractionDigits: 6});
   const date = x => x ? new Date(x * 1000).toLocaleString('zh-CN') : '尚无';
   function el(tag, text, className) {
@@ -49,7 +49,7 @@
       $('actual').append(el('h3', title + (period.complete ? ' · 已覆盖（末尾 2 分钟待结算）' : ' · 部分记录')));
       const rows = Object.entries(period.models).map(([model, m]) => [model, number(m.requests), million(m.tokens), million(m.input_tokens), million(m.output_tokens), million(m.cache_read_tokens), million(m.cache_creation_tokens), number(m.invalid_records)]);
       if (!rows.length) $('actual').append(el('p', '尚无已采集的调用记录。', 'muted'));
-      else $('actual').append(table(['模型','请求','已知 Token','输入','输出','缓存读','缓存写','不能校准的记录'], rows));
+      else $('actual').append(table(['模型','请求','已统计 Token','普通输入','输出','缓存读','缓存写','不能校准的记录'], rows));
     });
     $('estimates').replaceChildren();
     const reasons = {reset:'跨重置周期',snapshot_gap:'额度快照缺口',quota_decreased:'额度回退',ledger_gap:'日志范围不完整',invalid_usage:'缺失字段或非文本用量',quota_without_tokens:'有额度消耗但无 Token',boundary_uncertainty:'边界请求误差过大'};
