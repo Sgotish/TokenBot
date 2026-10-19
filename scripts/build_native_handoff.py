@@ -57,15 +57,19 @@ Ultra 由 Codex 客户端执行其工作模式，实际模型请求使用 xhigh�
 '''
 launcher = '''@echo off
 cd /d "%~dp0"
-powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File "%~dp0setup.ps1"
+powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File "%~dp0setup.ps1" -CheckOnly
 if errorlevel 1 goto failed
 powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File "%~dp0native-menu\install.ps1"
+if errorlevel 1 goto failed
+powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File "%~dp0setup.ps1"
 if errorlevel 1 goto failed
 echo Ready. Open the TokenBots Codex desktop shortcut.
 pause
 exit /b 0
 :failed
-echo Installation stopped. Your original app is unchanged. Send us the error text without your Key.
+echo Installation stopped. Original app files are unchanged, but Codex config may have switched.
+echo Restore the config.toml.before-tokenbots backup if you need the old route.
+echo Send us the error text without your Key.
 pause
 exit /b 1
 '''

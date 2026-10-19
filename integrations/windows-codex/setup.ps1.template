@@ -1,3 +1,4 @@
+param([switch]$CheckOnly)
 & {
 $ErrorActionPreference = 'Stop'
 $tbUrl = '__BASE_URL__'
@@ -6,6 +7,7 @@ $tbLabel = 'TokenBots Partner Test'
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 $tbCheck = Invoke-RestMethod -Uri ($tbUrl + '/models') -Headers @{Authorization=('Bearer ' + $tbKey)} -TimeoutSec 30
 if (-not ($tbCheck.data.id -contains 'gpt-6-astra')) { throw 'Test model is unavailable. Nothing was changed.' }
+if ($CheckOnly) { Write-Host 'Test endpoint available. No configuration changed.'; return }
 $tbDir = if ($env:CODEX_HOME) { $env:CODEX_HOME } else { Join-Path $env:USERPROFILE '.codex' }
 New-Item -ItemType Directory -Path $tbDir -Force | Out-Null
 $tbPath = Join-Path $tbDir 'config.toml'
@@ -26,6 +28,29 @@ if ($tbOld.Contains('tokenbots_partner_20261016')) {
     $tbBlock = [regex]::Replace($tbBlock, '(?m)^experimental_bearer_token\s*=[^\r\n]*', ('experimental_bearer_token = "' + $tbKey + '"'))
     $tbBlock = [regex]::Replace($tbBlock, '(?m)^name\s*=[^\r\n]*', ('name = "' + $tbLabel + '"'))
     $tbFixed = $tbOld.Substring(0,$tbMatches[0].Index) + $tbBlock + $tbOld.Substring($tbMatches[0].Index + $tbMatches[0].Length)
+    $tbSection = [regex]::Match($tbFixed, '(?m)^[ \t]*\[')
+    $tbRoot = if ($tbSection.Success) { $tbFixed.Substring(0,$tbSection.Index) } else { $tbFixed }
+    $tbRest = if ($tbSection.Success) { $tbFixed.Substring($tbSection.Index) } else { '' }
+    $tbCurrentModel = [regex]::Match($tbRoot, '(?m)^[ \t]*model[ \t]*=[ \t]*"([^"\r\n]+)"')
+    $tbCurrentEffort = [regex]::Match($tbRoot, '(?m)^[ \t]*model_reasoning_effort[ \t]*=[ \t]*"([^"\r\n]+)"')
+    $tbSelectedModel = 'gpt-6-astra'
+    $tbSelectedEffort = 'high'
+    if ($tbCurrentModel.Success -and ($tbCheck.data.id -contains $tbCurrentModel.Groups[1].Value)) {
+        $tbSelectedModel = $tbCurrentModel.Groups[1].Value
+        $tbEfforts = @('low','medium','high','xhigh','max')
+        if ($tbSelectedModel -notmatch '-luna$') { $tbEfforts += 'ultra' }
+        if ($tbCurrentEffort.Success -and ($tbEfforts -contains $tbCurrentEffort.Groups[1].Value)) {
+            $tbSelectedEffort = $tbCurrentEffort.Groups[1].Value
+        }
+    }
+    $tbRoot = [regex]::Replace($tbRoot, '(?m)^[ \t]*(model|model_provider|model_reasoning_effort|service_tier)[ \t]*=[^\r\n]*(\r?\n|$)', '')
+    $tbFixed = @"
+model = "$tbSelectedModel"
+model_provider = "tokenbots_partner_20261016"
+model_reasoning_effort = "$tbSelectedEffort"
+$tbRoot
+$tbRest
+"@
     [IO.File]::WriteAllText($tbPath, $tbFixed, (New-Object Text.UTF8Encoding($false)))
     Write-Host 'Configured: test endpoint repaired. Restart Codex and start a NEW LOCAL chat.'
     Write-Host ('Original configuration backup: ' + $tbBackup)

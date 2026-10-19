@@ -1,7 +1,6 @@
 param([string]$ArchivePath, [switch]$PrepareOnly)
 $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
-$version = '26.1013.4894.0'
 $architecture = if ($env:PROCESSOR_ARCHITEW6432) { $env:PROCESSOR_ARCHITEW6432 } else { $env:PROCESSOR_ARCHITECTURE }
 if ($architecture -eq 'AMD64') {
     $targetArch = 'x64'
@@ -15,20 +14,26 @@ New-Item -ItemType Directory -Force -Path $base | Out-Null
 $download = Join-Path $base ('ChatGPT-latest-' + $targetArch + '.msix')
 if (-not $ArchivePath) {
     [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
-    Write-Host 'Downloading official desktop package (about 1 GB)...'
     $url = 'https://persistent.oaistatic.com/codex-app-prod/ChatGPT-' + $targetArch + '.msix'
-    if (Get-Command curl.exe -ErrorAction SilentlyContinue) {
-        & curl.exe --fail --location --silent --show-error --retry 2 --max-time 240 $url -o $download
-        if ($LASTEXITCODE -ne 0) { throw 'Official package download failed.' }
-    } else { Invoke-WebRequest -UseBasicParsing -Uri $url -OutFile $download }
+    if ((Test-Path -LiteralPath $download) -and (Get-FileHash -LiteralPath $download -Algorithm SHA256).Hash.ToLowerInvariant() -eq $releaseHash) {
+        Write-Host 'Using cached official desktop package.'
+    } else {
+        Write-Host 'Downloading official desktop package (about 1 GB)...'
+        if (Get-Command curl.exe -ErrorAction SilentlyContinue) {
+            & curl.exe --fail --location --silent --show-error --retry 2 --max-time 900 $url -o $download
+            if ($LASTEXITCODE -ne 0) { throw 'Official package download failed.' }
+        } else { Invoke-WebRequest -UseBasicParsing -Uri $url -OutFile $download }
+    }
     $ArchivePath = $download
 }
 if ((Get-FileHash -LiteralPath $ArchivePath -Algorithm SHA256).Hash.ToLowerInvariant() -ne $releaseHash) {
     throw 'Official release has changed. Stop here for a new adapter; existing apps are unchanged.'
 }
-$destination = Join-Path $base ($version + '-' + (Get-Date -Format 'yyyyMMdd-HHmmss'))
-Add-Type -AssemblyName System.IO.Compression.FileSystem
-[IO.Compression.ZipFile]::ExtractToDirectory((Resolve-Path -LiteralPath $ArchivePath).Path, $destination)
+$destination = Join-Path $base ('c-' + (Get-Date -Format 'yyyyMMdd-HHmmss'))
+if (-not (Get-Command tar.exe -ErrorAction SilentlyContinue)) { throw 'Windows tar.exe is required to extract this release.' }
+New-Item -ItemType Directory -Path $destination | Out-Null
+& tar.exe -xf (Resolve-Path -LiteralPath $ArchivePath).Path -C $destination
+if ($LASTEXITCODE -ne 0) { throw 'Official package extraction failed.' }
 Write-Host 'Official package extracted.'
 $appDir = Join-Path $destination 'app'
 New-Item -ItemType File -Path (Join-Path $appDir '.tokenbots-custom-copy') | Out-Null
