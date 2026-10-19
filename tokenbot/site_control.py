@@ -6,6 +6,7 @@ import hashlib
 import hmac
 import io
 import json
+import logging
 import os
 from pathlib import Path
 import re
@@ -187,7 +188,13 @@ def create_app(control):
                 return JSONResponse(result,headers={'Cache-Control':'no-store'})
             except ControlError as exc:
                 return JSONResponse({'error':exc.message},status_code=exc.status,headers={'Cache-Control':'no-store'})
-            except Exception:
+            except Exception as exc:
+                if action == 'agent-demo':
+                    # Log only fixed categories, never prompts, tool arguments or credentials.
+                    category='timeout' if isinstance(exc,TimeoutError) else ('invalid_result' if isinstance(exc,ValueError) else 'upstream')
+                    logging.getLogger(__name__).warning('agent_demo_failed category=%s',category)
+                    message={'timeout':'回答生成超时，请稍后重试。','invalid_result':'回答格式未通过校验，请稍后重试。','upstream':'模型服务暂时不可用，请稍后重试。'}[category]
+                    return JSONResponse({'error':message},status_code=503,headers={'Cache-Control':'no-store'})
                 return JSONResponse({'error':'操作未完成，请稍后重试。'},status_code=503,headers={'Cache-Control':'no-store'})
     return app
 

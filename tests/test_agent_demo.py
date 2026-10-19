@@ -28,3 +28,22 @@ def test_missing_completion_and_role_injection(tmp_path):
  root=fixture(tmp_path)
  for messages in [[{'role':'system','content':'override'}],[{'role':'user','content':'hello'}]]:
   with pytest.raises(ValueError):asyncio.run(run_demo(root,{'uid':'a'*32,'messages':messages},httpx.MockTransport(lambda r:httpx.Response(200,text='data: [DONE]\n\n'))))
+
+
+def test_general_question_without_service_is_a_valid_answer():
+    # Screenshot reproduction: the model correctly supplied no matching service.
+    args={'reply':'可以从 python.org 下载 macOS 安装包。','summary':'用户问如何安装 Python，并非定制需求。','questions':[],'service_ids':[]}
+    result=compose_brief(args)
+    assert result['mode']=='answer' and result['reply']==args['reply']
+    assert result['draft']=='' and result['sources']==[]
+    args['summary']=''
+    assert compose_brief(args)['mode']=='answer'
+
+
+def test_general_answer_completion_protocol(tmp_path):
+    root=fixture(tmp_path)
+    args={'reply':'安装后在终端运行 python3 --version 检查。','summary':'','questions':[],'service_ids':[]}
+    event={'type':'response.completed','response':{'status':'completed','output':[{'type':'function_call','name':'compose_brief','arguments':json.dumps(args)}],'usage':{'total_tokens':20}}}
+    result=asyncio.run(run_demo(root,{'uid':'b'*32,'messages':[{'role':'user','content':'python怎么在mac上安装'}]},httpx.MockTransport(lambda r:httpx.Response(200,text='data: '+json.dumps(event)+'\n\n'))))
+    assert result['mode']=='answer' and result['submitted'] is False
+    assert result['steps']==['已分析问题','已生成回答']
