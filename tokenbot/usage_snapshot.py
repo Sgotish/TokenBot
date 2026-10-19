@@ -40,7 +40,8 @@ def record_view(record, accounts, groups):
     return {'created_at': record.get('created_at'), 'pool': groups.get(str(record.get('group_id')), '历史分组'),
             'account': accounts.get(str(record.get('account_id')), '未知账号'),
             'model': record.get('model'), 'duration_ms': record.get('duration_ms'),
-            'total_tokens': sum(int(record.get(k) or 0) for k in ('input_tokens','output_tokens','cache_read_tokens','cache_creation_tokens'))}
+            'total_tokens': sum(int(record.get(k) or 0) for k in ('input_tokens','output_tokens','cache_read_tokens','cache_creation_tokens')),
+            **{k:int(record.get(k) or 0) for k in ('input_tokens','output_tokens','cache_read_tokens','cache_creation_tokens')}}
 
 
 def quota_view(account, label, quota, now):

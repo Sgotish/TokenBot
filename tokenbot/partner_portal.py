@@ -13,6 +13,11 @@ from fastapi.responses import FileResponse, JSONResponse
 STATIC = Path(__file__).with_name('static')
 COOKIE = '__Host-tokenbot-session'
 
+def accepts_digest(config, digest):
+    return hmac.compare_digest(hashlib.sha256(config['key'].encode()).hexdigest(), digest) or any(
+        item.get('enabled') is True and hmac.compare_digest(item.get('digest', ''), digest)
+        for item in config.get('aliases', {}).values())
+
 
 class PortalSecurityHeaders:
     """Add headers without wrapping receive: queued requests must see disconnects."""
@@ -92,7 +97,13 @@ class ClientRegistry:
             if len(values) != len(set(values)):
                 raise ValueError('Duplicate customer configuration')
         owned_keys = set()
+        public_digests = set()
         for cfg in entries.values():
+            digests = [hashlib.sha256(cfg['key'].encode()).hexdigest(),
+                       *[v['digest'] for v in cfg.get('aliases', {}).values()]]
+            if len(digests) != len(set(digests)) or public_digests.intersection(digests):
+                raise ValueError('Customer credentials must be distinct')
+            public_digests.update(digests)
             keys = {p['key'] for p in cfg.get('pools', {}).values()}
             if owned_keys & keys:
                 raise ValueError('Customers must have separate upstream keys')
@@ -104,7 +115,7 @@ class ClientRegistry:
             entries = self.entries()
             for cid, cfg in entries.items():
                 if ((ident is not None and ident != cid) or
-                        (key is not None and not hmac.compare_digest(key.encode(), cfg['key'].encode()))):
+                        (key is not None and not accepts_digest(cfg, hashlib.sha256(key.encode()).hexdigest()))):
                     continue
                 if key is None and ident is None:
                     return None
@@ -143,7 +154,7 @@ def install_portal(app, config, registry):
         session = sessions.get(hashlib.sha256(value.encode()).hexdigest())
         if session and session['expires'] > time.time():
             found = registry.resolve(ident=session['client'])
-            if found and hmac.compare_digest(session['key_hash'], hashlib.sha256(found[1].config['key'].encode()).hexdigest()):
+            if found and accepts_digest(found[1].config, session['key_hash']):
                 return found
         return None
 

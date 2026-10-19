@@ -119,7 +119,7 @@ def create_app(config, transport=None):
         else:
             await lock.acquire()
         queue_start_acquired = time.monotonic()
-        current = registry.resolve(ident=client_id)
+        current = registry.resolve(key=auth[7:]) if auth else app.state.portal_identity(request)
         if current is None or current[1] is not state:
             lock.release()
             return error('Access disabled while waiting', 401)
