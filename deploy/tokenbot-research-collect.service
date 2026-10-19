@@ -1,0 +1,17 @@
+[Unit]
+Description=Collect passive TokenBot capacity research
+After=docker.service tokenbot-usage.service
+
+[Service]
+Type=oneshot
+User=root
+WorkingDirectory=/opt/tokenbot-pilot
+ExecStart=/opt/tokenbot-pilot/venv/bin/python scripts/collect_capacity_research.py
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/tokenbot-research
+TimeoutStartSec=80
+MemoryMax=192M

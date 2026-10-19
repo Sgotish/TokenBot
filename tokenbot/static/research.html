@@ -1,0 +1,18 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>TokenBots · 容量与定价研究</title><link rel="stylesheet" href="/research/assets/research.css"><script src="/research/assets/research.js" defer></script></head>
+<body><main>
+<header><div class="eyebrow">TOKENBOTS / 运营研究</div><h1>从实测用量，推算售价</h1><p>记录 Token 与套餐额度的变化，估算共享容量。这里的试算不会修改客户余额或启用收费。</p></header>
+<section id="login"><h2>管理员研究入口</h2><form id="login-form"><label>研究访问密钥<input id="key" type="password" required autocomplete="off" placeholder="专用只读密钥，不是客户 API Key"></label><button>查看研究数据</button></form><p class="muted">密钥仅保留在此页面内存中。关闭或刷新页面后需重新输入。</p></section>
+<p id="message" role="status" aria-live="polite"></p>
+<div id="dashboard" hidden>
+<div class="toolbar"><label>上游账号<select id="account"></select></label><button id="refresh" type="button">刷新数据</button><button id="logout" class="secondary" type="button">退出</button></div>
+<p id="freshness" class="muted"></p>
+<section><h2>售价情景 · 每个账号每月</h2><p class="muted">初始 $100 来自你的成本假设，其余为可调整假设；请按所选账号填写。金额单位为 USD。</p>
+<div class="inputs"><label>套餐成本 $<input id="cost" type="number" min="0" step="1" value="100"></label><label>分摊运营成本 $<input id="overhead" type="number" min="0" step="1" value="0"></label><label>可售利用率 %<input id="util" type="number" min="1" max="100" value="70"></label><label>支付费率 %<input id="fee" type="number" min="0" max="99" step="0.1" value="3"></label><label>目标利润率 %<input id="margin" type="number" min="0" max="99" value="30"></label></div>
+<p class="formula">参考售价 / 百万 Token =（套餐成本 + 分摊成本）÷（月估算容量 / 百万 × 可售利用率 ×（1 − 支付费率 − 利润率））</p>
+<p class="muted">可售利用率应扣除闲置、保留额度及不可收费损耗。不同模型共享一个账号预算，不能把各模型的完整容量相加。</p><p id="scenario-error" role="alert"></p></section>
+<section><h2>已记录的实际 Token</h2><p class="muted">这是实际用量，不是套餐容量。缺失字段不会补成已确认的零；后台日志范围不足时标记为部分记录。</p><div id="actual"></div></section>
+<section><h2>额度消耗与容量估算</h2><p class="muted">每个样本至少跨 30 分钟、消耗 5 个百分点，并检查日志覆盖和边界请求。至少 3 个样本且累计 15 个百分点后显示“已积累样本”；仍需验证账号无平台外调用、失败重试等遗漏。</p><div id="estimates"></div></section>
+<section><h2>解释与边界</h2><ul id="limitations"></ul><p>当前不会从混用样本中硬拆 Sol / Astra 单价，也不会单独拟合输入、输出、缓存的价格系数。模型、推理强度、速度相同的独立样本会单列，旁边保留实测 Token 比例，便于判断能否比较。</p><p class="formula">k = 消耗额度百分点 ÷ Token 百万数；窗口容量 = 100 ÷ k（百万 Token）；月容量 = 周容量 × 30 / 7。</p></section>
+</div><footer>容量研究 v1 · 只读采集 · 不发送模型测试请求</footer>
+</main></body></html>

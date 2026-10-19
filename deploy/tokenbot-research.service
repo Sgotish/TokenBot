@@ -1,0 +1,19 @@
+[Unit]
+Description=TokenBot read-only capacity research dashboard
+After=network-online.target
+
+[Service]
+User=tokenbot-bridge
+Group=tokenbot-bridge
+WorkingDirectory=/opt/tokenbot-pilot
+ExecStart=/opt/tokenbot-pilot/venv/bin/python -m uvicorn tokenbot.research_app:app_factory --factory --host 127.0.0.1 --port 8185 --no-proxy-headers --no-access-log --limit-concurrency 8
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+MemoryMax=96M
+
+[Install]
+WantedBy=multi-user.target

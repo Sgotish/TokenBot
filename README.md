@@ -16,6 +16,7 @@
 - [验收状态](docs/verification.md)：区分实际已测、未测及阻塞项。
 - [订阅接入方案](docs/subscription-pilot.md)：Plus/Pro 授权、分组、容量与计费边界。
 - [客户 Token 用量与计价研究方案](docs/customer-token-billing-plan.md)：客户用量展示、模拟计价、账本接入与套餐成本研究；尚未启用正式收费。
+- [套餐容量与售价研究](docs/capacity-research.md)：被动采集 Token 与额度历史、按模型组合估算容量、只读研究页与部署脚本；部署后积累实测样本。
 
 ## Linux / Docker
 
