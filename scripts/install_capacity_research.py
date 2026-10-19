@@ -13,6 +13,7 @@ import secrets
 import shutil
 import subprocess
 import sys
+import time
 import urllib.error
 import urllib.request
 
@@ -38,6 +39,22 @@ def caddy_candidate(source):
 
 def run(*args, check=True):
     return subprocess.run(args, check=check, capture_output=True, text=True, timeout=90)
+
+
+def wait_for_auth_gate(opener, endpoint, timeout=15, pause=time.sleep):
+    """systemctl start does not wait for Uvicorn to bind its socket."""
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        try:
+            with opener.open(endpoint, timeout=min(2, max(.1, deadline-time.monotonic()))):
+                raise RuntimeError('Unauthenticated report was not rejected')
+        except urllib.error.HTTPError as exc:
+            if exc.code == 401:
+                return
+            raise
+        except (urllib.error.URLError, TimeoutError):
+            pause(min(.25, max(0, deadline-time.monotonic())))
+    raise TimeoutError('Research service did not become ready within the deadline')
 
 
 def main():
@@ -93,13 +110,7 @@ def main():
     run('systemctl', 'start', 'tokenbot-research-collect.service')
     opener = urllib.request.build_opener(NoRedirect(), urllib.request.ProxyHandler({}))
     endpoint = 'http://127.0.0.1:8185/research/api/report'
-    try:
-        opener.open(endpoint, timeout=10)
-    except urllib.error.HTTPError as exc:
-        if exc.code != 401:
-            raise
-    else:
-        raise RuntimeError('Unauthenticated report was not rejected')
+    wait_for_auth_gate(opener, endpoint)
     req = urllib.request.Request(endpoint, headers={'Authorization': 'Bearer '+key.read_text().strip()})
     with opener.open(req, timeout=10) as result:
         data = json.load(result)

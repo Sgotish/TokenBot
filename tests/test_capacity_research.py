@@ -9,7 +9,7 @@ from tokenbot.capacity_research import (TOKENS, connect, usage_row, save_scan, s
                                        measure, report, pricing, covered)
 from tokenbot.research_app import create_app
 from scripts.collect_capacity_research import fetch_usage, collect
-from scripts.install_capacity_research import caddy_candidate
+from scripts.install_capacity_research import caddy_candidate, wait_for_auth_gate
 
 BASE = 1800000000
 
@@ -215,3 +215,25 @@ def test_caddy_route_preserves_existing_control_plane_and_default():
     assert caddy_candidate(candidate) == candidate
     with pytest.raises(ValueError): caddy_candidate('unrelated.test {respond 200}')
     with pytest.raises(ValueError): caddy_candidate('pilot.test {/research different}')
+
+
+def test_installer_waits_for_listener_and_requires_authentication():
+    import urllib.error
+    class Starting:
+        attempts = 0
+        def open(self, endpoint, timeout):
+            self.attempts += 1
+            if self.attempts == 1:
+                raise urllib.error.URLError('Connection refused')
+            raise urllib.error.HTTPError(endpoint, 401, 'Unauthorized', {}, None)
+    opener = Starting()
+    wait_for_auth_gate(opener, 'http://localhost/research/api/report', pause=lambda _: None)
+    assert opener.attempts == 2
+    with pytest.raises(TimeoutError):
+        wait_for_auth_gate(opener, 'http://localhost', timeout=0)
+    class Public:
+        def open(self, endpoint, timeout):
+            from contextlib import nullcontext
+            return nullcontext()
+    with pytest.raises(RuntimeError, match='not rejected'):
+        wait_for_auth_gate(Public(), 'http://localhost')
