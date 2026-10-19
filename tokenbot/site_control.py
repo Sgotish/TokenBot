@@ -152,7 +152,7 @@ class SiteControl:
                 'Mac / Linux / Windows CLI：先安装 Node.js 20+ 和官方 Codex；运行对应 setup-desktop 或 setup-cli。Linux 可执行 sh setup-cli.command。\n'
                 'WSL 请在 WSL 内单独配置，不与 Windows 共用配置目录。\n'
                 '新配置默认 Astra/high，已有有效选择保留。七个模型共用同一把 Key；在 Codex 内选择模型和支持的强度，无需网站选渠道。\n'
-                '跨平台回退：node tokenbots.cjs rollback --backup <安装输出的备份路径>。Windows 定制副本回退请退出后打开原版应用。\n'
+                '跨平台回退：node tokenbots.cjs rollback --target cli（桌面配置将 cli 改为 desktop）；自定义目录需另加 --home。Windows 定制副本回退请退出后打开原版应用。\n'
                 'Windows 定制副本并非官方发行版；原版保留。Mac/Linux 此包仅配置接入，未添加原生用量菜单。\n'
                 '测试期间不收费；上游订阅容量仍有限。需要停用 Key 时在网站操作。\n').encode('utf-8-sig'))
         return output.getvalue()
