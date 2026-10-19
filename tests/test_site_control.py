@@ -63,6 +63,8 @@ class SiteControlTests(unittest.TestCase):
             self.assertEqual(json.loads(z.read('TokenBots/access.json'))['key'],a['api_key'])
             self.assertIn('TokenBots/install-native.cmd',z.namelist())
             self.assertIn('TokenBots/setup-cli.command',z.namelist())
+            self.assertIn('TokenBots/start-cli.command',z.namelist())
+            self.assertIn('run --',z.read('TokenBots/start-cli.command').decode())
             self.assertNotIn(self.c.secret,str([z.read(n) for n in z.namelist()]))
 
 if __name__=='__main__':unittest.main()

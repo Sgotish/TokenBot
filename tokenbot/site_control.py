@@ -141,6 +141,8 @@ class SiteControl:
             for target in ('desktop','cli'):
                 put('setup-'+target+'.cmd','@echo off\r\ncd /d "%~dp0"\r\nnode tokenbots.cjs setup --target '+target+' --access access.json\r\npause\r\n')
                 put('setup-'+target+'.command','#!/bin/sh\ncd -- "$(dirname -- "$0")" || exit 1\nnode ./tokenbots.cjs setup --target '+target+' --access ./access.json\n',True)
+            put('start-cli.cmd','@echo off\r\ncd /d "%~dp0"\r\nnode tokenbots.cjs run -- %*\r\npause\r\n')
+            put('start-cli.command','#!/bin/sh\ncd -- "$(dirname -- "$0")" || exit 1\nexec node ./tokenbots.cjs run -- "$@"\n',True)
             setup=(self.root/'integrations/windows-codex/setup.ps1.template').read_text().replace('__BASE_URL__',access['base_url']).replace('__TEST_KEY__',key).replace('TokenBots Partner Test',access['label'])
             put('setup.ps1',setup.encode('utf-8-sig'))
             for file in (self.root/'integrations/windows-codex/native-menu').iterdir():
@@ -150,6 +152,7 @@ class SiteControl:
             put('README.txt',('TokenBots 专属测试接入包\n\n仅给当前账户使用，包含私密 API Key。不要上传公开仓库或转发其他客户。\n'
                 'Windows 原生用量菜单：退出 Codex，完整解压后运行 install-native.cmd，随后从 TokenBots Codex 快捷方式启动。\n'
                 'Mac / Linux / Windows CLI：先安装 Node.js 20+ 和官方 Codex；运行对应 setup-desktop 或 setup-cli。Linux 可执行 sh setup-cli.command。\n'
+                'CLI 配置后请运行 start-cli.cmd（Windows）或 sh start-cli.command（Mac/Linux），这样才会使用专用配置目录；直接运行普通 codex 保持原配置。\n'
                 'WSL 请在 WSL 内单独配置，不与 Windows 共用配置目录。\n'
                 '新配置默认 Astra/high，已有有效选择保留。七个模型共用同一把 Key；在 Codex 内选择模型和支持的强度，无需网站选渠道。\n'
                 '跨平台回退：node tokenbots.cjs rollback --target cli（桌面配置将 cli 改为 desktop）；自定义目录需另加 --home。Windows 定制副本回退请退出后打开原版应用。\n'
