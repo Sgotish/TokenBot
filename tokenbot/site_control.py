@@ -176,10 +176,14 @@ def create_app(control):
                     body=bytearray()
                     async for chunk in request.stream():
                         body.extend(chunk)
-                        if len(body)>4096: raise ControlError('请求过大。',413)
+                        if len(body)>(20000 if action=='agent-demo' else 4096): raise ControlError('请求过大。',413)
                 data=json.loads(body)
                 if not isinstance(data,dict): raise ControlError('请求无效。')
-                result=await run_in_threadpool(control.run,action,data)
+                if action == 'agent-demo':
+                    from .agent_demo import run_demo
+                    result=await run_demo(control.root,data)
+                else:
+                    result=await run_in_threadpool(control.run,action,data)
                 return JSONResponse(result,headers={'Cache-Control':'no-store'})
             except ControlError as exc:
                 return JSONResponse({'error':exc.message},status_code=exc.status,headers={'Cache-Control':'no-store'})
