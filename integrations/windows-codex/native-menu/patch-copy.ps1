@@ -20,22 +20,30 @@ try {
         return [Text.Encoding]::UTF8.GetString($reader.ReadBytes([int]$entry.size))
     }
     $package = (Read-Entry $tree.files.'package.json') | ConvertFrom-Json
-    if ($package.version -ne '26.1013.40934') { throw 'This release needs adaptation before patching. Original installation is unchanged.' }
+    $adapters = @{
+        '26.1013.40934' = @{ menu='profile-dropdown-items-71a6e604645d.js'; hash='2e9cd921b030aab1dbd26e12ac1698f4bc9c3129b442e4c65ae690f43d3574c3'; sidebar='n'; react='ma'; item='O'; handler='browser-background-switches-DmHa3bqb.js' }
+        '26.1016.51333' = @{ menu='profile-dropdown-items-9ba35f09babf.js'; hash='eecb54cf3c4f894d07d9bc46331f9c56cd4bfea4a0ce6b71b213e529ce14e9c3'; sidebar='i'; react='ja'; item='K'; handler='browser-background-switches-oSaaOz4s.js'; handlerHash='e45e03af9526ac3b9ce1221348893174229fd5714be143bac12c6885f234d605' }
+    }
+    $adapter = $adapters[$package.version]
+    if (-not $adapter) { throw 'This release needs adaptation before patching. Original installation is unchanged.' }
     $assets = $tree.files.webview.files.assets.files
-    $menuName = 'profile-dropdown-items-71a6e604645d.js'
+    $menuName = $adapter.menu
     $entry = $assets.$menuName
     $menu = Read-Entry $entry
     $sha = [Security.Cryptography.SHA256]::Create()
     function Hash-Bytes([byte[]]$bytes) { return ([BitConverter]::ToString($sha.ComputeHash($bytes))).Replace('-','').ToLowerInvariant() }
-    if ((Hash-Bytes ([Text.Encoding]::UTF8.GetBytes($menu))) -ne '2e9cd921b030aab1dbd26e12ac1698f4bc9c3129b442e4c65ae690f43d3574c3') { throw 'Menu differs from the reviewed release; nothing changed.' }
+    if ((Hash-Bytes ([Text.Encoding]::UTF8.GetBytes($menu))) -ne $adapter.hash) { throw 'Menu differs from the reviewed release; nothing changed.' }
     $anchor = 'Pn=f?(0,$.jsx)'
     if ([regex]::Matches($menu,[regex]::Escape($anchor)).Count -ne 1) { throw 'Menu anchor is ambiguous.' }
-    $menu = $menu.Replace($anchor,'Pn=n?.modelProviderName?.startsWith(`TokenBots`)?(0,$.jsx)(TokenBotsNativeUsage,{}):f?(0,$.jsx)')
-    $menu += "`n" + [IO.File]::ReadAllText((Join-Path $PSScriptRoot 'component.js'))
+    $menu = $menu.Replace($anchor,('Pn=' + $adapter.sidebar + '?.modelProviderName?.startsWith(`TokenBots`)?(0,$.jsx)(TokenBotsNativeUsage,{}):f?(0,$.jsx)'))
+    $component = [IO.File]::ReadAllText((Join-Path $PSScriptRoot 'component.js'))
+    $component = $component.Replace('ma.use', ($adapter.react + '.use')).Replace('$.jsx(O,', ('$.jsx(' + $adapter.item + ','))
+    $menu += "`n" + $component
     $patches['webview/assets/' + $menuName] = [Text.Encoding]::UTF8.GetBytes($menu)
     $build = $tree.files.'.vite'.files.build.files
-    $handlerName = 'browser-background-switches-DmHa3bqb.js'
+    $handlerName = $adapter.handler
     $handler = Read-Entry $build.$handlerName
+    if ($adapter.handlerHash -and (Hash-Bytes ([Text.Encoding]::UTF8.GetBytes($handler))) -ne $adapter.handlerHash) { throw 'Protocol module differs from the reviewed release.' }
     $anchor = 'o.protocol.handle(`app`,async t=>{let n=L(t.url,e);'
     if ([regex]::Matches($handler,[regex]::Escape($anchor)).Count -ne 1) { throw 'Protocol handler changed.' }
     $handler = $handler.Replace($anchor,'o.protocol.handle(`app`,async t=>{if(new URL(t.url).host===`-`&&new URL(t.url).pathname.startsWith(`/tokenbots-native/`))return require(`./tokenbots-native.cjs`).handle(t);let n=L(t.url,e);')

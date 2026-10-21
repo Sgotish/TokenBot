@@ -4,7 +4,7 @@ $ProgressPreference = 'SilentlyContinue'
 $architecture = if ($env:PROCESSOR_ARCHITEW6432) { $env:PROCESSOR_ARCHITEW6432 } else { $env:PROCESSOR_ARCHITECTURE }
 if ($architecture -eq 'AMD64') {
     $targetArch = 'x64'
-    $releaseHash = 'e2d892e6c22310e4b1a2928b0d3a29a066e0863d3a333754d6585c77cdafbe7f'
+    $releaseHash = 'ace6a186a30c7b8a399c8498ee33238f2e30a54f9e12665ad7998a9f9d20f5b0'
 } elseif ($architecture -eq 'ARM64') {
     $targetArch = 'arm64'
     $releaseHash = 'bff7e61e8e7b5cf3b6a85d9cd60933160625162f1c148672bd93bb467fbd0888'
