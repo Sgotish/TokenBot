@@ -28,3 +28,16 @@
 At completion, audit duration, every answer/completion, errors, latency and token usage; record the actual outcome in the existing Google Doc and pause the follow-up. This machine's network does not establish Guangdong customer-network acceptance, and a finite test cannot establish permanent fault-free operation.
 
 The existing Google Doc was appended with this session's changes, evidence, unfinished work and next step; export comparison confirmed all prior text was preserved.
+
+
+## Final acceptance — 2026-10-22
+
+The bounded API observation passed: **97/97** exact answers and completion events, no recorded failed requests. First-to-last request span was 86400.001 seconds; total process duration 86402.085 seconds. Scheduled task exited with code 0 and the isolated configuration hash was unchanged. No extra inference or rerun was needed for this audit.
+
+Latency: median 2.640 s, nearest-lower-rank P95 7.191 s, maximum 30.254 s (minimum 1.690 s). Call gaps were 899.825–900.003 s.
+
+Token usage: 410698 input (393216 cached, 17482 uncached), 485 output; **411183 total**. Cache hits are included in this total, not subtracted. Monetary cost was not inferred.
+
+The dedicated account's live usage endpoint and website both showed **101 requests / 473148 tokens**, including four earlier validation calls outside the 97-call soak. The website displayed the last recorded call at 18:25:37 Toronto and a fresh snapshot. Cloud readiness checks passed 13/13. Browser polling remained active without manually refreshing data.
+
+Raw final status, per-request results, computed acceptance summary, cloud health, account totals and screenshots are saved under `reports/windows-20261021/`. The Google Doc received an appended final result; previous text was preserved. No Guangdong client-network or long-conversation acceptance is claimed by this result. The follow-up is paused after final reporting.
