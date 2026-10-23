@@ -50,6 +50,23 @@ class SiteControlTests(unittest.TestCase):
             self.assertEqual(client.post('/internal/site/status',json={'uid':'../../etc'},headers=h).status_code,400)
             self.assertEqual(client.post('/internal/site/status',content='x'*5000,headers=h).status_code,413)
             self.assertFalse(client.post('/internal/site/status',json={'uid':self.a},headers=h).json()['configured'])
+    def test_credit_reserve_is_idempotent_isolated_and_never_debits(self):
+        self.issue(self.a); self.issue(self.b)
+        request = {'uid': self.a, 'reference': 'manual-reserve-test', 'amount_minor': 20000}
+        first = self.c.run('reserve-credit', request)
+        self.assertEqual(first, self.c.run('reserve-credit', request))
+        self.assertEqual(first['amount_minor'], 20000)
+        self.assertFalse(first['billing_enabled'])
+        self.assertFalse(first['free_test_retroactive_charge'])
+        self.assertEqual(first['debited_minor'], 0)
+        self.assertIsNone(self.c.run('status', {'uid': self.b})['reserved_credit'])
+        for amount in (True, -1, '20000', 0):
+            with self.assertRaises(ControlError):
+                self.c.run('reserve-credit', {**request, 'amount_minor': amount})
+        with self.assertRaises(ControlError):
+            self.c.run('reserve-credit', {**request, 'amount_minor': 30000})
+        restarted = SiteControl(self.root, self.c.secret)
+        self.assertEqual(restarted.run('status', {'uid': self.a})['reserved_credit'], first)
     def test_usage_report_owner_binding_and_missing_data(self):
         self.c.research_state=self.root/'research';self.c.research_state.mkdir()
         (self.c.research_state/'customers').mkdir()

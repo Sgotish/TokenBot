@@ -76,9 +76,21 @@ class SiteControl:
     def public(self, cfg):
         state = PoolState(cfg).status()
         return {**state, 'enabled': cfg.get('enabled', True), 'pricing_mode':'test',
+            'reserved_credit': self.reserved_credit(cfg),
             'base_url':'https://pilot.tokenbots.top/v1', 'models':discovery()['data'],
             'keys':[{k:v for k,v in item.items() if k != 'digest'} | {'id':kid}
                     for kid,item in cfg.get('aliases',{}).items()]}
+
+    @staticmethod
+    def reserved_credit(cfg):
+        # A CNY reserve is not upstream quota or a receipt of payment. This
+        # control plane has no debit/activation action; free usage stays free.
+        grants = cfg.get('credit_reservations', {})
+        if not grants:
+            return None
+        return {'currency': 'CNY', 'amount_minor': sum(g['amount_minor'] for g in grants.values()),
+                'debited_minor': 0, 'billing_enabled': False,
+                'status': 'pending_pricing', 'free_test_retroactive_charge': False}
 
     def run(self, action, data):
         uid = data.get('uid', '')
@@ -125,6 +137,21 @@ class SiteControl:
                 raise ControlError('测试接入已停用。', 403)
             if action == 'status':
                 return {'configured':True, **self.public(cfg)}
+            if action == 'reserve-credit':
+                # Trusted service/admin CLI only. No customer-facing website
+                # route forwards this action. Reference makes retries safe.
+                reference, amount = data.get('reference', ''), data.get('amount_minor')
+                if not isinstance(reference, str) or not re.fullmatch(r'[a-z0-9-]{8,80}', reference) or type(amount) is not int or not 1 <= amount <= 100000000:
+                    raise ControlError('额度登记参数无效。')
+                grants = cfg.setdefault('credit_reservations', {})
+                if reference in grants:
+                    if grants[reference]['amount_minor'] != amount:
+                        raise ControlError('登记编号已存在且金额不同。', 409)
+                else:
+                    grants[reference] = {'amount_minor': amount, 'currency': 'CNY',
+                                         'created_at': int(time.time()), 'source': 'manual_authorized_reserve'}
+                    self.save(path, registry)
+                return self.reserved_credit(cfg)
             if action == 'usage-visualization':
                 return {'configured': True, **self.research(cid)}
             aliases = cfg.setdefault('aliases', {})
