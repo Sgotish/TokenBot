@@ -20,6 +20,7 @@ from starlette.concurrency import run_in_threadpool
 from .model_catalog import discovery
 from .partner_portal import PoolState, accepts_digest
 from .customer_billing import BillingError, CustomerBilling
+from .pricing_policy import PriceBook, pricing_lock
 
 
 class ControlError(Exception):
@@ -34,6 +35,7 @@ class SiteControl:
         self.private = self.root/'private'
         self.research_state = Path(research_state)
         self.billing = CustomerBilling(root)
+        self.pricing = PriceBook(root)
 
     def research(self, cid=None):
         try:
@@ -97,6 +99,8 @@ class SiteControl:
                 'status': 'pending_pricing', 'free_test_retroactive_charge': False}
 
     def run(self, action, data):
+        if action == 'public-pricing':
+            return self.pricing.projection()
         uid = data.get('uid', '')
         if not re.fullmatch(r'[0-9a-f]{32}', uid):
             raise ControlError('账户标识无效。')
@@ -106,6 +110,12 @@ class SiteControl:
             fcntl.flock(lock, fcntl.LOCK_EX)
             fcntl.flock(provision_lock, fcntl.LOCK_EX)
             main, path, registry = self.registry()
+            if action == 'pricing-admin':
+                return self.pricing.projection(admin=True)
+            if action == 'pricing-save':
+                if data.get('actor') != uid:
+                    raise ControlError('调价操作者无效。', 403)
+                return self.pricing.apply(data, path, registry, lambda: self.save(path, registry))
             if action == 'admin-research':
                 # Only the trusted website backend may call this route; it
                 # checks the logged-in actor's admin role before forwarding.
@@ -137,7 +147,8 @@ class SiteControl:
             if action in ('billing', 'billing-page'):
                 return self.billing.view(cid, cfg, data.get('page', 1))
             if action == 'activate-billing':
-                return self.billing.activate(cid, cfg, lambda: self.save(path, registry))
+                with pricing_lock(path):
+                    return self.billing.activate(cid, cfg, lambda: self.save(path, registry), registry.get('pricing_multiplier', '0.5'))
             if action == 'billing-credit':
                 return self.billing.credit(cid, cfg, data)
             if action == 'set-enabled':
@@ -171,6 +182,9 @@ class SiteControl:
                 kid, label = data.get('request_id',''), data.get('label','')
                 if not re.fullmatch(r'[0-9a-f]{32}', kid) or not isinstance(label,str) or not 1<=len(label)<=60 or any(ord(c)<32 for c in label):
                     raise ControlError('请填写有效的密钥名称。')
+                if registry.get('billing_live'):
+                    with pricing_lock(path):
+                        self.billing.activate(cid, cfg, lambda: self.save(path, registry), registry['pricing_multiplier'])
                 value = 'sk-tb-'+hmac.new(self.secret.encode(), ('key:'+uid+':'+kid).encode(), hashlib.sha256).hexdigest()
                 if kid not in aliases:
                     if len(aliases)>=30 or sum(x['enabled'] for x in aliases.values())>=10:

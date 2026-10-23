@@ -128,9 +128,12 @@ class CustomerBilling:
         end = time.strftime('%Y-%m-%d', time.gmtime())
         return panel('GET', '/usage/stats?start_date=2000-01-01&end_date='+end+'&timezone=UTC', token)
 
-    def activate(self, cid, cfg, persist_registry):
+    def activate(self, cid, cfg, persist_registry, multiplier='0.5'):
+        multiplier = money(amount(multiplier))
+        if not Decimal('0.01') <= amount(multiplier) <= Decimal('10'):
+            raise BillingError('计费倍率无效。')
         if cfg.get('billing', {}).get('status') == 'active':
-            return {'ok': True, 'billing_enabled': True, 'multiplier': '0.5'}
+            return {'ok': True, 'billing_enabled': True, 'multiplier': cfg['billing']['multiplier']}
         with account_lock(cfg, exclusive=True):
             panel = self.panel_factory()
             source = self.source(cid)
@@ -142,16 +145,17 @@ class CustomerBilling:
                 raise BillingError('现有余额不是初始测试额度，请先核对，不能自动清零。', 409)
             if cfg.get('billing', {}).get('status') != 'activating':
                 stats = self.stats(panel, token)
-                cfg['billing'] = {'status': 'activating', 'multiplier': '0.5',
+                cfg['billing'] = {'status': 'activating', 'multiplier': multiplier,
                     'activated_at': int(time.time()), 'initial_test_balance_removed': money(profile['balance']),
                     'previous_actual_cost': money(stats['total_actual_cost']), 'currency': 'USD'}
                 persist_registry()
             admin = self.admin(panel)
-            groups = {str(p['group_id']): 0.5 for p in cfg['pools'].values()}
+            cfg['billing']['multiplier'] = multiplier
+            groups = {str(p['group_id']): float(amount(multiplier)) for p in cfg['pools'].values()}
             # Account is quiescent and bridge rejects 'activating'; retries are safe.
             panel('PUT', '/admin/users/'+str(source['user_id']), admin, {'group_rates': groups})
             updated = panel('GET', '/admin/users/'+str(source['user_id']), admin)
-            if any(amount(updated.get('group_rates', {}).get(gid)) != Decimal('0.5') for gid in groups):
+            if any(amount(updated.get('group_rates', {}).get(gid)) != amount(multiplier) for gid in groups):
                 raise BillingError('客户倍率尚未确认，保持暂停开通，请稍后重试。', 503)
             # The upstream general user-update DTO accepts "balance" but its
             # service ignores it. Use the dedicated, audited balance endpoint.
@@ -164,11 +168,11 @@ class CustomerBilling:
                 raise BillingError('初始测试余额尚未归零，保持暂停开通，请核对后重试。', 503)
             cfg['billing']['status'] = 'active'
             persist_registry()
-            return {'ok': True, 'billing_enabled': True, 'multiplier': '0.5'}
+            return {'ok': True, 'billing_enabled': True, 'multiplier': multiplier}
 
     def credit(self, cid, cfg, data):
         if cfg.get('billing', {}).get('status') != 'active':
-            raise BillingError('请先开通此客户的 0.5×计费。', 409)
+            raise BillingError('请先开通此客户的按量计费。', 409)
         reference = data.get('reference')
         if not isinstance(reference, str) or not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9._-]{7,79}', reference):
             raise BillingError('订单号须为 8 至 80 位字母、数字、点、横线或下划线。')
@@ -186,6 +190,11 @@ class CustomerBilling:
             raise BillingError('该订单号已登记不同金额或币种，不能重复入账。', 409)
         if existing and existing['status'] == 'credited':
             return {'ok': True, 'order': existing, 'replayed': True}
+        policy = self.private/'pricing-policy.json'
+        if not existing and not testing and data['paid_currency'] == 'CNY' and policy.exists():
+            saved = json.loads(policy.read_text())
+            if saved.get('cny_per_credit') == '1' and amount(paid) != amount(credit):
+                raise BillingError('当前人民币充值为 1:1 站内额度，入账额度必须等于人民币实收金额。')
         order = existing or {**order, 'created_at': int(time.time()), 'status': 'pending',
                              'actor': data.get('actor', '')}
         state['orders'][reference] = order
@@ -211,7 +220,7 @@ class CustomerBilling:
         billing = cfg.get('billing', {})
         if billing.get('status') != 'active':
             return {'billing_enabled': False, 'status': billing.get('status', 'free_test'),
-                    'currency': 'USD', 'multiplier': '0.5', 'items': [], 'orders': []}
+                    'currency': 'USD', 'multiplier': billing.get('multiplier', '0.5'), 'items': [], 'orders': []}
         source = self.source(cid)
         panel = self.panel_factory()
         token = self.customer(panel, source)
@@ -238,7 +247,7 @@ class CustomerBilling:
         public_orders = [{k: o.get(k) for k in ('reference', 'credit_usd', 'paid_amount',
             'paid_currency', 'created_at', 'credited_at', 'status', 'kind')} for o in orders]
         spent = amount(stats['total_actual_cost'])-amount(billing['previous_actual_cost'])
-        return {'billing_enabled': True, 'status': 'active', 'currency': 'USD', 'multiplier': '0.5',
+        return {'billing_enabled': True, 'status': 'active', 'currency': 'USD', 'multiplier': billing['multiplier'],
             'generated_at': time.time(), 'activated_at': billing['activated_at'],
             'balance_usd': money(profile['balance']), 'spent_usd': money(spent),
             'credited_usd': money(sum((amount(o['credit_usd']) for o in orders if o['status']=='credited'), Decimal(0))),

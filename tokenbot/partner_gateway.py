@@ -6,7 +6,7 @@ import json
 import io
 import os
 import time
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, ExitStack
 from pathlib import Path
 
 import httpx
@@ -18,6 +18,7 @@ from starlette.background import BackgroundTask
 from tokenbot.partner_portal import ClientRegistry, install_portal
 from tokenbot.model_catalog import discovery, validate_selection
 from tokenbot.customer_billing import BillingError, account_lock
+from tokenbot.pricing_policy import pricing_lock
 
 ROOT = Path(__file__).resolve().parents[1]
 MODEL = 'gpt-6.1-sol'
@@ -126,20 +127,28 @@ def create_app(config, transport=None):
         if current is None or current[1] is not state:
             lock.release()
             return error('Access disabled while waiting', 401)
-        billing_guard = None
-        if client_id.startswith('web-') and state.config.get('selection_path'):
-            try:
-                billing_guard = account_lock(state.config)
-                billing_guard.__enter__()
+        billing_guard = ExitStack()
+        try:
+            if config.get('clients_path'):
+                billing_guard.enter_context(pricing_lock(config['clients_path']))
+                policy = json.loads(Path(config['clients_path']).read_text())
+                if (policy.get('billing_live') and client_id.startswith('web-') and
+                        state.config.get('billing', {}).get('status') != 'active'):
+                    billing_guard.close()
+                    lock.release()
+                    return error('Account billing must be activated before calling models', 403)
+            if client_id.startswith('web-') and state.config.get('selection_path'):
+                billing_guard.enter_context(account_lock(state.config))
                 # Activation may have completed while this request was queued.
                 checked = registry.resolve(key=auth[7:]) if auth else app.state.portal_identity(request)
                 if checked is None or checked[1] is not state:
-                    billing_guard.__exit__(None, None, None)
+                    billing_guard.close()
                     lock.release()
                     return error('Account configuration changed; retry later', 409)
-            except (BillingError, OSError) as exc:
-                lock.release()
-                return error(exc.message, exc.status) if isinstance(exc, BillingError) else error('Billing guard unavailable; retry later', 503)
+        except (BillingError, OSError, ValueError) as exc:
+            billing_guard.close()
+            lock.release()
+            return error(exc.message, exc.status) if isinstance(exc, BillingError) else error('Billing guard unavailable; retry later', 503)
         state.active += 1
         selected = state.selected
         upstream_key = state.pools[selected]["key"]
@@ -148,8 +157,7 @@ def create_app(config, transport=None):
             nonlocal released
             if not released:
                 released = True
-                if billing_guard is not None:
-                    billing_guard.__exit__(None, None, None)
+                billing_guard.close()
                 lock.release()
                 state.active -= 1
         try:

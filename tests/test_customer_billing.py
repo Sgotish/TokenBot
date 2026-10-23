@@ -22,6 +22,7 @@ class BillingTests(unittest.TestCase):
         self.cfg = {'selection_path': str(self.root/'selection.json'), 'pools': {'pro': {'group_id':5}, 'plus': {'group_id':4}}}
         self.balance = Decimal('1')
         self.cost = Decimal('0')
+        self.rates = {'5': 0, '4': 0}
         self.codes = {}
         self.calls = []
         self.lose_response = False
@@ -41,8 +42,8 @@ class BillingTests(unittest.TestCase):
         if path.startswith('/usage/stats'):
             return {'total_actual_cost':self.cost}
         if path == '/admin/users/12':
-            if method=='GET':return {'group_rates':{'5':0.5,'4':0.5}}
-            self.assertEqual(body['group_rates'],{'5':0.5,'4':0.5})
+            if method=='GET':return {'group_rates':self.rates}
+            self.rates = body['group_rates']
             self.assertNotIn('balance',body)
             return {'group_rates':body['group_rates']}
         if path == '/admin/users/12/balance':
@@ -73,6 +74,7 @@ class BillingTests(unittest.TestCase):
         self.activate()
         self.assertEqual(self.balance,0)
         self.assertEqual(self.cfg['billing']['status'],'active')
+        self.assertEqual(self.rates, {'5': 0.5, '4': 0.5})
         self.billing.credit(self.cid,self.cfg,self.credit)
         self.activate()
         self.assertEqual(self.balance,10)
@@ -139,6 +141,23 @@ class BillingTests(unittest.TestCase):
             with self.assertRaises(BillingError):amount(value)
         for value in ('0','-1','0.001','1e3',1):
             with self.assertRaises(BillingError):amount(value,True)
+
+    def test_cny_one_to_one_policy_preserves_old_orders_and_validates_new_credit(self):
+        self.activate()
+        self.billing.credit(self.cid,self.cfg,self.credit)
+        (self.root/'private/pricing-policy.json').write_text('{"cny_per_credit":"1"}')
+        self.assertTrue(self.billing.credit(self.cid,self.cfg,self.credit)['replayed'])
+        different={**self.credit,'reference':'payment-new-order','paid_currency':'CNY','paid_amount':'70'}
+        with self.assertRaises(BillingError):
+            self.billing.credit(self.cid,self.cfg,different)
+        self.billing.credit(self.cid,self.cfg,{**different,'credit_usd':'70'})
+        self.assertEqual(self.balance,80)
+
+    def test_activation_and_view_use_configured_multiplier(self):
+        with patch('tokenbot.customer_billing.account_lock',lambda *a,**k:nullcontext()):
+            result=self.billing.activate(self.cid,self.cfg,lambda:None,multiplier='0.6')
+        self.assertEqual(result['multiplier'],'0.6')
+        self.assertEqual(self.billing.view(self.cid,self.cfg)['multiplier'],'0.6')
 
     @unittest.skipUnless(__import__('os').name=='posix','Production uses POSIX flock')
     def test_activation_requires_no_inflight_request(self):
