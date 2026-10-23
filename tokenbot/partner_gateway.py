@@ -17,6 +17,7 @@ from starlette.background import BackgroundTask
 
 from tokenbot.partner_portal import ClientRegistry, install_portal
 from tokenbot.model_catalog import discovery, validate_selection
+from tokenbot.customer_billing import BillingError, account_lock
 
 ROOT = Path(__file__).resolve().parents[1]
 MODEL = 'gpt-6.1-sol'
@@ -66,6 +67,8 @@ def create_app(config, transport=None):
         if not found:
             return error('Invalid, disabled or expired access key', 401)
         client_id, state = found
+        if state.config.get('billing', {}).get('status') == 'activating':
+            return error('Billing activation is in progress; retry later', 409)
         if (request.query_params and not (request.method == 'GET' and path == 'v1/models'
                 and set(request.query_params) == {'client_version'})) or (request.method, path) not in {
                 ('GET', 'v1/models'), ('POST', 'v1/responses'), ('POST', 'v1/chat/completions')}:
@@ -123,6 +126,20 @@ def create_app(config, transport=None):
         if current is None or current[1] is not state:
             lock.release()
             return error('Access disabled while waiting', 401)
+        billing_guard = None
+        if client_id.startswith('web-') and state.config.get('selection_path'):
+            try:
+                billing_guard = account_lock(state.config)
+                billing_guard.__enter__()
+                # Activation may have completed while this request was queued.
+                checked = registry.resolve(key=auth[7:]) if auth else app.state.portal_identity(request)
+                if checked is None or checked[1] is not state:
+                    billing_guard.__exit__(None, None, None)
+                    lock.release()
+                    return error('Account configuration changed; retry later', 409)
+            except (BillingError, OSError) as exc:
+                lock.release()
+                return error(exc.message, exc.status) if isinstance(exc, BillingError) else error('Billing guard unavailable; retry later', 503)
         state.active += 1
         selected = state.selected
         upstream_key = state.pools[selected]["key"]
@@ -131,6 +148,8 @@ def create_app(config, transport=None):
             nonlocal released
             if not released:
                 released = True
+                if billing_guard is not None:
+                    billing_guard.__exit__(None, None, None)
                 lock.release()
                 state.active -= 1
         try:

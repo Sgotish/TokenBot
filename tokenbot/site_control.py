@@ -19,6 +19,7 @@ from fastapi.responses import JSONResponse
 from starlette.concurrency import run_in_threadpool
 from .model_catalog import discovery
 from .partner_portal import PoolState, accepts_digest
+from .customer_billing import BillingError, CustomerBilling
 
 
 class ControlError(Exception):
@@ -32,6 +33,7 @@ class SiteControl:
         self.provision = provision or self._provision
         self.private = self.root/'private'
         self.research_state = Path(research_state)
+        self.billing = CustomerBilling(root)
 
     def research(self, cid=None):
         try:
@@ -75,7 +77,9 @@ class SiteControl:
 
     def public(self, cfg):
         state = PoolState(cfg).status()
-        return {**state, 'enabled': cfg.get('enabled', True), 'pricing_mode':'test',
+        return {**state, 'enabled': cfg.get('enabled', True),
+            'pricing_mode':'paid' if cfg.get('billing', {}).get('status') == 'active' else 'test',
+            'billing': {k:v for k,v in cfg.get('billing', {}).items() if k in ('status','currency','multiplier','activated_at')},
             'reserved_credit': self.reserved_credit(cfg),
             'base_url':'https://pilot.tokenbots.top/v1', 'models':discovery()['data'],
             'keys':[{k:v for k,v in item.items() if k != 'digest'} | {'id':kid}
@@ -121,6 +125,8 @@ class SiteControl:
                 main, path, registry = self.registry()
                 cfg = registry['clients'].get(cid)
             if not cfg:
+                if action in ('billing', 'billing-page'):
+                    return {'configured':False, 'billing_enabled':False, 'status':'not_configured', 'items':[], 'orders':[]}
                 if action == 'usage-visualization':
                     return {'configured': False, 'periods': [], 'billing_enabled': False}
                 if action == 'status':
@@ -128,6 +134,12 @@ class SiteControl:
                             'base_url':'https://pilot.tokenbots.top/v1','pricing_mode':'test',
                             'accounts':[], 'records':[], 'totals':{}}
                 raise ControlError('尚未开通测试接入。', 404)
+            if action in ('billing', 'billing-page'):
+                return self.billing.view(cid, cfg, data.get('page', 1))
+            if action == 'activate-billing':
+                return self.billing.activate(cid, cfg, lambda: self.save(path, registry))
+            if action == 'billing-credit':
+                return self.billing.credit(cid, cfg, data)
             if action == 'set-enabled':
                 if type(data.get('enabled')) is not bool:
                     raise ControlError('状态无效。')
@@ -214,7 +226,7 @@ class SiteControl:
                 '新配置默认 Astra/high，已有有效选择保留。七个模型共用同一把 Key；在 Codex 内选择模型和支持的强度，无需网站选渠道。\n'
                 '跨平台回退：node tokenbots.cjs rollback --target cli（桌面配置将 cli 改为 desktop）；自定义目录需另加 --home。Windows 定制副本回退请退出后打开原版应用。\n'
                 'Windows 定制副本并非官方发行版；原版保留。Mac/Linux 此包仅配置接入，未添加原生用量菜单。\n'
-                '测试期间不收费；上游订阅容量仍有限。需要停用 Key 时在网站操作。\n').encode('utf-8-sig'))
+                '计费状态、倍率、余额与逐笔账单以网站账户页面为准；免费测试历史不追扣。上游订阅容量仍有限。需要停用 Key 时在网站操作。\n').encode('utf-8-sig'))
         return output.getvalue()
 
 
@@ -242,7 +254,7 @@ def create_app(control):
                 else:
                     result=await run_in_threadpool(control.run,action,data)
                 return JSONResponse(result,headers={'Cache-Control':'no-store'})
-            except ControlError as exc:
+            except (ControlError, BillingError) as exc:
                 return JSONResponse({'error':exc.message},status_code=exc.status,headers={'Cache-Control':'no-store'})
             except Exception as exc:
                 if action == 'agent-demo':
