@@ -52,7 +52,7 @@ Ultra 由 Codex 客户端执行其工作模式，实际模型请求使用 xhigh�
 应用更新适配由我们维护，本定制副本不会自动跟随官方包升级。
 
 回退：退出 TokenBots Codex，打开原来的官方应用。原应用和会话目录未被替换。
-恢复配置则使用 configure 输出的 config.toml.before-tokenbots 备份；先保存你后续新增的配置。
+配置保存在每把 Key 独立的 TokenBots 目录；不覆盖原来的个人配置。
 本包包含你的接入 Key，只私发给指定搭档，不上传仓库、群聊或公开网盘。
 '''
 launcher = '''@echo off
@@ -61,14 +61,11 @@ powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File "%~dp0setup.ps1"
 if errorlevel 1 goto failed
 powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File "%~dp0native-menu\install.ps1"
 if errorlevel 1 goto failed
-powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File "%~dp0setup.ps1"
-if errorlevel 1 goto failed
 echo Ready. Open the TokenBots Codex desktop shortcut.
 pause
 exit /b 0
 :failed
-echo Installation stopped. Original app files are unchanged, but Codex config may have switched.
-echo Restore the config.toml.before-tokenbots backup if you need the old route.
+echo Installation stopped. Original app files and personal Codex configuration are unchanged.
 echo Send us the error text without your Key.
 pause
 exit /b 1

@@ -82,6 +82,9 @@ class SiteControlTests(unittest.TestCase):
             self.assertIsNone(z.testzip())
             self.assertEqual(json.loads(z.read('TokenBots/access.json'))['key'],a['api_key'])
             self.assertIn('TokenBots/install-native.cmd',z.namelist())
+            launch=z.read('TokenBots/install-native.cmd').decode()
+            self.assertIn('native-menu\\install.ps1',launch)
+            self.assertNotIn('-File setup.ps1',launch)  # no pre-install write to the user's default home
             self.assertIn('TokenBots/setup-cli.command',z.namelist())
             self.assertIn('TokenBots/start-cli.command',z.namelist())
             self.assertIn('run --',z.read('TokenBots/start-cli.command').decode())

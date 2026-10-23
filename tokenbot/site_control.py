@@ -176,9 +176,11 @@ class SiteControl:
             for file in (self.root/'integrations/windows-codex/native-menu').iterdir():
                 if file.suffix in ('.ps1','.js','.cjs'): put('native-menu/'+file.name,file.read_bytes())
             put('native-menu/native-access.json',json.dumps({'origin':access['public_origin'],'key':key}))
-            put('install-native.cmd','@echo off\r\ncd /d "%~dp0"\r\npowershell.exe -NoProfile -ExecutionPolicy Bypass -File setup.ps1\r\nif errorlevel 1 goto done\r\npowershell.exe -NoProfile -ExecutionPolicy Bypass -File native-menu\\install.ps1\r\n:done\r\npause\r\n')
+            put('install-native.cmd','@echo off\r\ncd /d "%~dp0"\r\npowershell.exe -NoProfile -ExecutionPolicy Bypass -File native-menu\\install.ps1\r\nif errorlevel 1 (echo Installation failed. Keep this window and send the error text without your Key.)\r\npause\r\n')
             put('README.txt',('TokenBots 专属测试接入包\n\n仅给当前账户使用，包含私密 API Key。不要上传公开仓库或转发其他客户。\n'
                 'Windows 原生用量菜单：退出 Codex，完整解压后运行 install-native.cmd，随后从 TokenBots Codex 快捷方式启动。\n'
+                'Windows x64 使用已审核且校验签名的固定版本，不再依赖官网滚动版本；无需预装 Node.js。配置与原版隔离，必须使用 TokenBots Codex 快捷方式并新建对话。\n'
+                '同一账户的专属 Key 可以在不同电脑使用，用量按账户汇总；不同用户请各自登录下载，不要共用包。\n'
                 'Mac / Linux / Windows CLI：先安装 Node.js 20+ 和官方 Codex；运行对应 setup-desktop 或 setup-cli。Linux 可执行 sh setup-cli.command。\n'
                 'CLI 配置后请运行 start-cli.cmd（Windows）或 sh start-cli.command（Mac/Linux），这样才会使用专用配置目录；直接运行普通 codex 保持原配置。\n'
                 'WSL 请在 WSL 内单独配置，不与 Windows 共用配置目录。\n'
