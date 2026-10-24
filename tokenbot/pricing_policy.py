@@ -33,11 +33,17 @@ CHANNEL = 'TokenBot website pricing'
 def pricing_lock(registry_path, exclusive=False):
     import fcntl
     path = Path(registry_path).with_suffix('.pricing-lock')
-    fd = os.open(path, os.O_RDWR | os.O_CREAT, 0o660)
+    # Inference runs in a read-only systemd mount namespace. flock(LOCK_SH)
+    # needs only a read descriptor; opening a pre-created lock for writing
+    # makes every request fail with EROFS after a pricing update.
+    try:
+        fd = os.open(path, os.O_RDWR if exclusive else os.O_RDONLY)
+    except FileNotFoundError:
+        fd = os.open(path, os.O_RDWR | os.O_CREAT, 0o660)
     if os.geteuid() == 0:
         os.fchown(fd, -1, Path(registry_path).stat().st_gid)
         os.fchmod(fd, 0o660)
-    with os.fdopen(fd, 'a') as handle:
+    with os.fdopen(fd, 'r+' if exclusive else 'r') as handle:
         try:
             fcntl.flock(handle, (fcntl.LOCK_EX if exclusive else fcntl.LOCK_SH) | fcntl.LOCK_NB)
         except BlockingIOError:

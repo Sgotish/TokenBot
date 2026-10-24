@@ -6,6 +6,7 @@ import json
 import io
 import os
 import time
+import logging
 from contextlib import asynccontextmanager, ExitStack
 from pathlib import Path
 
@@ -19,6 +20,7 @@ from tokenbot.partner_portal import ClientRegistry, install_portal
 from tokenbot.model_catalog import discovery, validate_selection
 from tokenbot.customer_billing import BillingError, account_lock
 from tokenbot.pricing_policy import pricing_lock
+from tokenbot.gateway_events import record_failure
 
 ROOT = Path(__file__).resolve().parents[1]
 MODEL = 'gpt-6.1-sol'
@@ -68,8 +70,14 @@ def create_app(config, transport=None):
         if not found:
             return error('Invalid, disabled or expired access key', 401)
         client_id, state = found
+        started = time.monotonic()
+        model = None
+        def failed(message, status, code, headers=None, not_forwarded=True):
+            rid = record_failure(state.config, model, status, code, time.monotonic()-started, not_forwarded)
+            return error(message, status, {**(headers or {}), 'X-Request-ID': rid,
+                         'X-TokenBot-Error-Source': code})
         if state.config.get('billing', {}).get('status') == 'activating':
-            return error('Billing activation is in progress; retry later', 409)
+            return failed('Billing activation is in progress; retry later', 409, 'billing_activation')
         if (request.query_params and not (request.method == 'GET' and path == 'v1/models'
                 and set(request.query_params) == {'client_version'})) or (request.method, path) not in {
                 ('GET', 'v1/models'), ('POST', 'v1/responses'), ('POST', 'v1/chat/completions')}:
@@ -94,6 +102,7 @@ def create_app(config, transport=None):
                 selection_error = validate_selection(data)
                 if selection_error:
                     return error(selection_error, 400)
+                model = data.get('model')
                 if data.get('background') or data.get('service_tier') not in (None, 'auto', 'default'):
                     return error('Background and priority requests are disabled', 400)
             except (ValueError, UnicodeError, TimeoutError, zstandard.ZstdError):
@@ -104,13 +113,13 @@ def create_app(config, transport=None):
         if lock.locked():
             busy_headers = {'Retry-After': '5', 'X-TokenBot-Error-Source': 'bridge_capacity'}
             if sum(s.pending for s in registry.states.values()) >= max_pending:
-                return error('Server queue is full; subscription quota was not checked or consumed', 503, busy_headers)
+                return failed('Server queue is full; subscription quota was not checked or consumed', 503, 'bridge_capacity', busy_headers)
             state.pending += 1
             try:
                 while True:
                     remaining = queue_timeout - (time.monotonic() - queue_start)
                     if remaining <= 0:
-                        return error('Server queue wait timed out; retry later', 503, busy_headers)
+                        return failed('Server queue wait timed out; retry later', 503, 'bridge_capacity', busy_headers)
                     if await request.is_disconnected():
                         return error('Client disconnected before model execution', 499)
                     try:
@@ -133,10 +142,11 @@ def create_app(config, transport=None):
                 billing_guard.enter_context(pricing_lock(config['clients_path']))
                 policy = json.loads(Path(config['clients_path']).read_text())
                 if (policy.get('billing_live') and client_id.startswith('web-') and
-                        state.config.get('billing', {}).get('status') != 'active'):
+                        state.config.get('billing', {}).get('status') != 'active' and
+                        state.config.get('free_test_authorized') is not True):
                     billing_guard.close()
                     lock.release()
-                    return error('Account billing must be activated before calling models', 403)
+                    return failed('Account billing must be activated before calling models', 403, 'billing_not_active')
             if client_id.startswith('web-') and state.config.get('selection_path'):
                 billing_guard.enter_context(account_lock(state.config))
                 # Activation may have completed while this request was queued.
@@ -148,7 +158,8 @@ def create_app(config, transport=None):
         except (BillingError, OSError, ValueError) as exc:
             billing_guard.close()
             lock.release()
-            return error(exc.message, exc.status) if isinstance(exc, BillingError) else error('Billing guard unavailable; retry later', 503)
+            logging.getLogger(__name__).warning('billing_guard_failed type=%s errno=%s', type(exc).__name__, getattr(exc, 'errno', None))
+            return failed(exc.message, exc.status, 'billing_guard') if isinstance(exc, BillingError) else failed('Billing guard unavailable; retry later', 503, 'billing_guard')
         state.active += 1
         selected = state.selected
         upstream_key = state.pools[selected]["key"]
@@ -181,7 +192,7 @@ def create_app(config, transport=None):
             raise
         except Exception:
             release()
-            return error('Local gateway unavailable; request was not retried', 502)
+            return failed('Local gateway unavailable; request was not retried', 502, 'gateway_transport', not_forwarded=False)
 
         async def cleanup():
             try:
@@ -202,6 +213,7 @@ def create_app(config, transport=None):
                                  'X-TokenBot-Queue-Wait-Ms': str(round((queue_start_acquired-queue_start)*1000))})
         if upstream.status_code >= 400:
             response_headers['X-TokenBot-Error-Source'] = 'upstream_gateway'
+            response_headers['X-TokenBot-Request-ID'] = record_failure(state.config, model, upstream.status_code, 'upstream_gateway', time.monotonic()-started, False)
         return StreamingResponse(chunks(), status_code=upstream.status_code,
                                  media_type=upstream.headers.get('content-type', 'application/json'),
                                  headers=response_headers,

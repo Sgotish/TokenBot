@@ -9,6 +9,7 @@ from urllib.parse import urlsplit
 
 from fastapi import Request
 from fastapi.responses import FileResponse, JSONResponse
+from .gateway_events import recent_failures
 
 STATIC = Path(__file__).with_name('static')
 COOKIE = '__Host-tokenbot-session'
@@ -66,10 +67,15 @@ class PoolState:
 
     def status(self):
         try:
+            failures, failures_unavailable = recent_failures(self.config), False
+        except (OSError, ValueError):
+            failures, failures_unavailable = [], True
+        try:
             snapshot = json.loads(Path(self.config['snapshot_path']).read_text())
         except (OSError, ValueError, KeyError):
             snapshot = {'generated_at': None, 'accounts': [], 'records': [], 'totals': {}, 'error': '用量数据暂不可用'}
         return {**snapshot, 'snapshot_stale': not snapshot.get('generated_at') or time.time()-snapshot['generated_at'] > 180,
+                'recent_failures': failures, 'failures_unavailable': failures_unavailable,
                 'selected_pool': self.selected, 'active_requests': self.active, 'queued_requests': self.pending,
                 'pools': [{'id': k, 'label': v['label']} for k, v in self.pools.items()],
                 'platform_quota': None, 'expires_at': self.config['expires_at'],

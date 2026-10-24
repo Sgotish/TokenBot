@@ -5,6 +5,7 @@ import os
 from pathlib import Path
 import tempfile
 import unittest
+from unittest.mock import patch
 
 from tokenbot.customer_billing import BillingError
 from tokenbot.pricing_policy import PriceBook, pricing_lock
@@ -120,6 +121,18 @@ class PricingTests(unittest.TestCase):
         self.assertEqual(e.exception.status, 409)
         self.assertFalse(self.channels)
         self.assertFalse(self.registry.get('pricing_pending'))
+
+    def test_existing_shared_lock_works_on_read_only_mount(self):
+        with pricing_lock(self.registry_path, exclusive=True):
+            pass
+        real_open = os.open
+        def readonly(path, flags, *args):
+            if Path(path) == self.registry_path.with_suffix('.pricing-lock') and flags & (os.O_RDWR | os.O_WRONLY | os.O_CREAT):
+                raise OSError(30, 'Read-only file system')
+            return real_open(path, flags, *args)
+        with patch('tokenbot.pricing_policy.os.open', side_effect=readonly):
+            with pricing_lock(self.registry_path):
+                pass
 
     def test_invalid_partial_or_nonfinite_prices_never_reach_native(self):
         for change in ({'confirmed': False}, {'multiplier': 'NaN'}, {'multiplier': True},
