@@ -128,7 +128,7 @@ class CustomerBilling:
         end = time.strftime('%Y-%m-%d', time.gmtime())
         return panel('GET', '/usage/stats?start_date=2000-01-01&end_date='+end+'&timezone=UTC', token)
 
-    def activate(self, cid, cfg, persist_registry, multiplier='0.5', *, trial=None):
+    def activate(self, cid, cfg, persist_registry, multiplier='0.33351', *, trial=None):
         multiplier = money(amount(multiplier))
         if not Decimal('0.01') <= amount(multiplier) <= Decimal('10'):
             raise BillingError('计费倍率无效。')
@@ -173,7 +173,7 @@ class CustomerBilling:
             persist_registry()
             return {'ok': True, 'billing_enabled': True, 'multiplier': multiplier}
 
-    def grant_trial(self, cid, cfg, persist_registry, limit, reference, multiplier='0.5'):
+    def grant_trial(self, cid, cfg, persist_registry, limit, reference, multiplier='0.33351'):
         """Trusted admin CLI only: synthetic native credits, never a payment.
 
         Native usage settlement and insufficient-balance checks are reused so
@@ -247,7 +247,7 @@ class CustomerBilling:
         trial = billing.get('mode') == 'trial_budget'
         if billing.get('status') != 'active':
             return {'billing_enabled': False, 'status': billing.get('status', 'free_test'),
-                    'currency': 'USD', 'multiplier': billing.get('multiplier', '0.5'), 'items': [], 'orders': []}
+                    'currency': 'USD', 'multiplier': billing.get('multiplier', '0.33351'), 'items': [], 'orders': []}
         source = self.source(cid)
         panel = self.panel_factory()
         token = self.customer(panel, source)

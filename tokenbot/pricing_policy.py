@@ -17,14 +17,17 @@ from .model_catalog import MODEL_EFFORTS
 
 FIELDS = ('input', 'output', 'cache_read', 'cache_write')
 NATIVE = dict(zip(FIELDS, ('input_price', 'output_price', 'cache_read_price', 'cache_write_price')))
+# APINebula CODEX group uses 6.6702 CNY/USD; 0.5 zhe of that reference is 0.33351 native units.
+REFERENCE_CNY_PER_USD = Decimal('6.6702')
+DEFAULT_MULTIPLIER = '0.33351'
 BASE = {
     'gpt-6.1-sol': ('2', '10', '.1', '2.5'),
     'gpt-6-astra': ('10', '50', '1', '12.5'),
     'gpt-6-sol': ('2', '10', '.2', '2.5'),
     'gpt-6-luna': ('.1', '.5', '.01', '.125'),
-    'gpt-5.6-sol': ('4', '20', '.4', '5'),
-    'gpt-5.6-terra': ('2', '12', '.2', '2.5'),
-    'gpt-5.6-luna': ('.2', '1.2', '.02', '.25'),
+    'gpt-5.6-sol': ('5', '30', '.5', '6.25'),
+    'gpt-5.6-terra': ('4', '24', '.4', '5'),
+    'gpt-5.6-luna': ('.4', '2.4', '.04', '.5'),
 }
 CHANNEL = 'TokenBot website pricing'
 
@@ -75,7 +78,7 @@ class PriceBook:
     def read(self):
         if self.path.exists():
             return json.loads(self.path.read_text())
-        return {'version': 0, 'updated_at': 0, 'multiplier': '0.5',
+        return {'version': 0, 'updated_at': 0, 'multiplier': DEFAULT_MULTIPLIER,
                 'models': [{'id': mid, 'base': dict(zip(FIELDS, map(money, values)))} for mid, values in BASE.items()]}
 
     def write(self, document):
@@ -102,11 +105,16 @@ class PriceBook:
         result = {k: active[k] for k in ('multiplier',)}
         result.update(version=saved['version'], updated_at=saved['updated_at'], currency='USD',
                       display_currency='CNY', cny_per_credit='1',
+                      reference_cny_per_usd=money(REFERENCE_CNY_PER_USD),
+                      reference_discount_zhe=money((amount(active['multiplier']) / REFERENCE_CNY_PER_USD * 10).normalize()),
                       context_note='当前各上下文统一单价', service_tiers=['standard'],
-                      source='https://developers.openai.com/api/docs/pricing',
-                      source_checked_at='2026-10-23', models=[])
+                      source='https://apinebula.ai/zh/pricing',
+                      source_checked_at='2026-10-24', models=[])
         for row in active['models']:
             result['models'].append({'id': row['id'], 'provider': 'OpenAI', 'family': 'GPT',
+                'reference_source': ('https://developers.openai.com/api/docs/pricing'
+                                     if row['id'] in ('gpt-6-luna', 'gpt-5.6-terra', 'gpt-5.6-luna')
+                                     else 'https://apinebula.ai/zh/pricing'),
                 'base': row['base'], 'prices': {k: money(amount(v)*amount(active['multiplier'])) for k, v in row['base'].items()}})
         if admin:
             result.update(pending=bool(pending), initialized=bool(saved['version']),
