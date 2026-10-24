@@ -159,6 +159,37 @@ class BillingTests(unittest.TestCase):
         self.assertEqual(result['multiplier'],'0.6')
         self.assertEqual(self.billing.view(self.cid,self.cfg)['multiplier'],'0.6')
 
+    def test_trial_budget_is_native_metered_without_payment_and_cannot_duplicate(self):
+        self.cfg['credit_reservations']={'existing-reserve':{'amount_minor':20000}}
+        grant=lambda:self.billing.grant_trial(self.cid,self.cfg,lambda:None,'200','trial-customer-001')
+        grant();grant()
+        self.assertEqual(self.balance,Decimal('200'))
+        self.assertEqual(self.rates,{'5':.5,'4':.5})
+        order=self.billing.state(self.cid)['orders']['trial-customer-001']
+        self.assertEqual(order['paid_amount'],'0.00')
+        self.assertEqual(order['kind'],'trial_credit')
+        self.cost=Decimal('.0025');self.balance-=self.cost
+        view=self.billing.view(self.cid,self.cfg)
+        self.assertFalse(view['billing_enabled']);self.assertTrue(view['trial_budget'])
+        self.assertEqual(view['balance_usd'],'199.9975')
+        self.assertEqual(view['spent_usd'],'0.0025');self.assertEqual(view['cash_debited'],'0')
+        self.assertEqual(view['items'][0]['status'],'trial_usage')
+        self.assertEqual(self.cfg['credit_reservations']['existing-reserve']['amount_minor'],20000)
+        with self.assertRaises(BillingError):self.billing.credit(self.cid,self.cfg,self.credit)
+        for limit,ref in [('201','trial-customer-001'),('200','trial-customer-002')]:
+            with self.assertRaises(BillingError):
+                self.billing.grant_trial(self.cid,self.cfg,lambda:None,limit,ref)
+
+    def test_trial_grant_lost_response_retries_once_and_paid_account_is_not_overwritten(self):
+        self.lose_response=True
+        with self.assertRaises(BillingError):
+            self.billing.grant_trial(self.cid,self.cfg,lambda:None,'200','trial-retry-001')
+        self.billing.grant_trial(self.cid,self.cfg,lambda:None,'200','trial-retry-001')
+        self.assertEqual(self.balance,Decimal('200'))
+        self.cfg['billing'].pop('mode')
+        with self.assertRaises(BillingError):
+            self.billing.grant_trial(self.cid,self.cfg,lambda:None,'200','trial-retry-001')
+
     @unittest.skipUnless(__import__('os').name=='posix','Production uses POSIX flock')
     def test_activation_requires_no_inflight_request(self):
         with account_lock(self.cfg):

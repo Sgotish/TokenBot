@@ -80,8 +80,8 @@ class SiteControl:
     def public(self, cfg):
         state = PoolState(cfg).status()
         return {**state, 'enabled': cfg.get('enabled', True),
-            'pricing_mode':'paid' if cfg.get('billing', {}).get('status') == 'active' else 'test',
-            'billing': {k:v for k,v in cfg.get('billing', {}).items() if k in ('status','currency','multiplier','activated_at')},
+            'pricing_mode':'trial_budget' if cfg.get('billing', {}).get('mode') == 'trial_budget' else 'paid' if cfg.get('billing', {}).get('status') == 'active' else 'test',
+            'billing': {k:v for k,v in cfg.get('billing', {}).items() if k in ('status','mode','currency','multiplier','activated_at')},
             'reserved_credit': self.reserved_credit(cfg),
             'base_url':'https://pilot.tokenbots.top/v1', 'models':discovery()['data'],
             'keys':[{k:v for k,v in item.items() if k != 'digest'} | {'id':kid}

@@ -128,7 +128,7 @@ class CustomerBilling:
         end = time.strftime('%Y-%m-%d', time.gmtime())
         return panel('GET', '/usage/stats?start_date=2000-01-01&end_date='+end+'&timezone=UTC', token)
 
-    def activate(self, cid, cfg, persist_registry, multiplier='0.5'):
+    def activate(self, cid, cfg, persist_registry, multiplier='0.5', *, trial=None):
         multiplier = money(amount(multiplier))
         if not Decimal('0.01') <= amount(multiplier) <= Decimal('10'):
             raise BillingError('计费倍率无效。')
@@ -148,6 +148,9 @@ class CustomerBilling:
                 cfg['billing'] = {'status': 'activating', 'multiplier': multiplier,
                     'activated_at': int(time.time()), 'initial_test_balance_removed': money(profile['balance']),
                     'previous_actual_cost': money(stats['total_actual_cost']), 'currency': 'USD'}
+                if trial:
+                    cfg['billing'].update(mode='trial_budget', trial_limit=trial['limit'],
+                                          trial_reference=trial['reference'])
                 persist_registry()
             admin = self.admin(panel)
             cfg['billing']['multiplier'] = multiplier
@@ -170,6 +173,25 @@ class CustomerBilling:
             persist_registry()
             return {'ok': True, 'billing_enabled': True, 'multiplier': multiplier}
 
+    def grant_trial(self, cid, cfg, persist_registry, limit, reference, multiplier='0.5'):
+        """Trusted admin CLI only: synthetic native credits, never a payment.
+
+        Native usage settlement and insufficient-balance checks are reused so
+        all keys share one budget and concurrent calls cannot create separate
+        allowances. Customer cash reservations remain untouched.
+        """
+        limit = format(amount(limit, True), '.2f')
+        if not isinstance(reference, str) or not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9._-]{7,79}', reference):
+            raise BillingError('试用额度登记编号无效。')
+        existing = cfg.get('billing', {})
+        if existing and (existing.get('mode') != 'trial_budget' or
+                         existing.get('trial_limit') != limit or existing.get('trial_reference') != reference):
+            raise BillingError('已有其他账本或试用额度，不能覆盖或重复发放。', 409)
+        self.activate(cid, cfg, persist_registry, multiplier,
+                      trial={'limit': limit, 'reference': reference})
+        return self.credit(cid, cfg, {'reference': reference, 'credit_usd': limit,
+            'paid_currency': 'CNY', 'confirmed': True, 'trial_credit': True})
+
     def credit(self, cid, cfg, data):
         if cfg.get('billing', {}).get('status') != 'active':
             raise BillingError('请先开通此客户的按量计费。', 409)
@@ -180,18 +202,22 @@ class CustomerBilling:
             raise BillingError('须确认实际收款，并填写收款币种。')
         credit = format(amount(data.get('credit_usd'), True), '.2f')
         testing = data.get('test_credit') is True and cfg.get('billing_qa') is True
-        paid = '0.00' if testing else format(amount(data.get('paid_amount'), True), '.2f')
+        trial = cfg['billing'].get('mode') == 'trial_budget'
+        if trial and not (data.get('trial_credit') is True and
+                          reference == cfg['billing']['trial_reference'] and credit == cfg['billing']['trial_limit']):
+            raise BillingError('当前为免费试用额度，不能混入实收充值或重复增加额度。', 409)
+        paid = '0.00' if testing or trial else format(amount(data.get('paid_amount'), True), '.2f')
         source = self.source(cid)
         state = self.state(cid)
         order = {'reference': reference, 'credit_usd': credit, 'paid_amount': paid,
-                 'paid_currency': data['paid_currency'], 'kind': 'test_credit' if testing else 'payment'}
+                 'paid_currency': data['paid_currency'], 'kind': 'trial_credit' if trial else 'test_credit' if testing else 'payment'}
         existing = state['orders'].get(reference)
         if existing and any(existing[k] != v for k, v in order.items()):
             raise BillingError('该订单号已登记不同金额或币种，不能重复入账。', 409)
         if existing and existing['status'] == 'credited':
             return {'ok': True, 'order': existing, 'replayed': True}
         policy = self.private/'pricing-policy.json'
-        if not existing and not testing and data['paid_currency'] == 'CNY' and policy.exists():
+        if not existing and not testing and not trial and data['paid_currency'] == 'CNY' and policy.exists():
             saved = json.loads(policy.read_text())
             if saved.get('cny_per_credit') == '1' and amount(paid) != amount(credit):
                 raise BillingError('当前人民币充值为 1:1 站内额度，入账额度必须等于人民币实收金额。')
@@ -206,7 +232,7 @@ class CustomerBilling:
         code = 'TBPAY-'+base64.b32encode(hashlib.sha256(reference.encode()).digest()[:16]).decode().rstrip('=')
         result = panel('POST', '/admin/redeem-codes/create-and-redeem', admin,
             {'code': code, 'type': 'balance', 'value': float(credit), 'user_id': source['user_id'],
-             'notes': ('TokenBots QA credit NO PAYMENT ' if testing else 'TokenBots manual payment ')+reference}, idempotency=code)['redeem_code']
+             'notes': ('TokenBots FREE TRIAL NO PAYMENT ' if trial else 'TokenBots QA credit NO PAYMENT ' if testing else 'TokenBots manual payment ')+reference}, idempotency=code)['redeem_code']
         if (result.get('used_by') != source['user_id'] or amount(result.get('value')) != amount(credit)
                 or result.get('status') != 'used'):
             raise BillingError('原生充值记录与订单不符，已暂停确认，请管理员核对。', 409)
@@ -218,6 +244,7 @@ class CustomerBilling:
         if type(page) is not int or not 1 <= page <= 10000:
             raise BillingError('账单页码无效。')
         billing = cfg.get('billing', {})
+        trial = billing.get('mode') == 'trial_budget'
         if billing.get('status') != 'active':
             return {'billing_enabled': False, 'status': billing.get('status', 'free_test'),
                     'currency': 'USD', 'multiplier': billing.get('multiplier', '0.5'), 'items': [], 'orders': []}
@@ -242,12 +269,16 @@ class CustomerBilling:
                         status='settled' if complete and row.get('actual_cost') is not None else 'needs_review')
             if item['multiplier'] == '0':
                 item['status'] = 'free_test'
+            elif trial and item['status'] == 'settled':
+                item['status'] = 'trial_usage'
             items.append(item)
         orders = list(self.state(cid)['orders'].values())
         public_orders = [{k: o.get(k) for k in ('reference', 'credit_usd', 'paid_amount',
             'paid_currency', 'created_at', 'credited_at', 'status', 'kind')} for o in orders]
         spent = amount(stats['total_actual_cost'])-amount(billing['previous_actual_cost'])
-        return {'billing_enabled': True, 'status': 'active', 'currency': 'USD', 'multiplier': billing['multiplier'],
+        return {'billing_enabled': not trial, 'metering_enabled': True, 'trial_budget': trial,
+            'cash_debited': '0' if trial else None,
+            'status': 'trial_budget' if trial else 'active', 'currency': 'CNY' if trial else 'USD', 'multiplier': billing['multiplier'],
             'generated_at': time.time(), 'activated_at': billing['activated_at'],
             'balance_usd': money(profile['balance']), 'spent_usd': money(spent),
             'credited_usd': money(sum((amount(o['credit_usd']) for o in orders if o['status']=='credited'), Decimal(0))),
