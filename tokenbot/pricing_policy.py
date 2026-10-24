@@ -17,9 +17,9 @@ from .model_catalog import MODEL_EFFORTS
 
 FIELDS = ('input', 'output', 'cache_read', 'cache_write')
 NATIVE = dict(zip(FIELDS, ('input_price', 'output_price', 'cache_read_price', 'cache_write_price')))
-# APINebula CODEX group uses 6.6702 CNY/USD; 0.5 zhe of that reference is 0.33351 native units.
+# Sub2API stores group rates to four decimals; this is approximately 0.5 zhe at the reference FX rate.
 REFERENCE_CNY_PER_USD = Decimal('6.6702')
-DEFAULT_MULTIPLIER = '0.33351'
+DEFAULT_MULTIPLIER = '0.3335'
 BASE = {
     'gpt-6.1-sol': ('2', '10', '.1', '2.5'),
     'gpt-6-astra': ('10', '50', '1', '12.5'),
@@ -106,7 +106,7 @@ class PriceBook:
         result.update(version=saved['version'], updated_at=saved['updated_at'], currency='USD',
                       display_currency='CNY', cny_per_credit='1',
                       reference_cny_per_usd=money(REFERENCE_CNY_PER_USD),
-                      reference_discount_zhe=money((amount(active['multiplier']) / REFERENCE_CNY_PER_USD * 10).normalize()),
+                      reference_discount_zhe=money((amount(active['multiplier']) / REFERENCE_CNY_PER_USD * 10).quantize(Decimal('0.01')).normalize()),
                       context_note='当前各上下文统一单价', service_tiers=['standard'],
                       source='https://apinebula.ai/zh/pricing',
                       source_checked_at='2026-10-24', models=[])
@@ -131,6 +131,8 @@ class PriceBook:
         if type(data.get('version')) is not int or data['version'] < 0:
             raise BillingError('价格版本无效。')
         factor = decimal_setting(data.get('multiplier'), '0.01', '10')
+        if amount(factor) != amount(factor).quantize(Decimal('0.0001')):
+            raise BillingError('原生倍率最多保留四位小数。')
         models = data.get('models')
         if not isinstance(models, list) or len(models) != len(MODEL_EFFORTS):
             raise BillingError('请提交全部已开放模型的价格。')

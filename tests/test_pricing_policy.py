@@ -16,7 +16,7 @@ class ReferencePricingTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             book = PriceBook(tmp)
             projection = book.projection(admin=True)
-        self.assertEqual(projection['multiplier'], '0.33351')
+        self.assertEqual(projection['multiplier'], '0.3335')
         self.assertEqual(projection['reference_discount_zhe'], '0.5')
         expected = {
             'gpt-6.1-sol': ('2', '10', '.1', '2.5'),
@@ -34,7 +34,7 @@ class ReferencePricingTests(unittest.TestCase):
                                  tuple(Decimal(value) for value in expected[model['id']]))
                 for key in ('input', 'output', 'cache_read', 'cache_write'):
                     self.assertEqual(Decimal(model['prices'][key]),
-                                     Decimal(model['base'][key]) * Decimal('0.33351'))
+                                     Decimal(model['base'][key]) * Decimal('0.3335'))
 
 
 @unittest.skipUnless(os.name == 'posix', 'Production pricing locks require Linux')
@@ -47,7 +47,7 @@ class PricingTests(unittest.TestCase):
         self.cid = 'web-'+'a'*32
         (self.root/'private/customers'/(self.cid+'.json')).write_text('{"user_id":12}')
         self.registry_path = self.root/'clients.json'
-        self.registry = {'clients': {self.cid: {'billing': {'status': 'active', 'multiplier': '0.33351'},
+        self.registry = {'clients': {self.cid: {'billing': {'status': 'active', 'multiplier': '0.3335'},
             'pools': {'auto': {'group_id': 4}, 'pro': {'group_id': 5}}}}}
         self.persist()
         self.book = PriceBook(self.root, lambda: self.panel)
@@ -95,12 +95,12 @@ class PricingTests(unittest.TestCase):
         result = self.apply()
         model = next(m for m in result['models'] if m['id'] == 'gpt-6.1-sol')
         native = next(m for m in self.channels[0]['model_pricing'] if m['models'] == ['gpt-6.1-sol'])
-        self.assertEqual(model['prices']['input'], '0.66702')
+        self.assertEqual(Decimal(model['prices']['input']), Decimal('0.667'))
         self.assertEqual(Decimal(str(native['input_price'])), Decimal('.000002'))
         self.assertEqual(Decimal(str(native['output_price'])), Decimal('.000010'))
         # Reconcile the actual historical 17 input + 5 output probe.
         debit = (17*Decimal(str(native['input_price']))+5*Decimal(str(native['output_price'])))*Decimal(str(self.rates['4']))
-        self.assertEqual(debit, Decimal('.00002801484'))
+        self.assertEqual(debit, Decimal('.0000280140'))
         self.assertEqual(self.rates['99'], .7)  # unrelated group rates preserved
         self.assertEqual(result['display_currency'], 'CNY')
         self.assertEqual(result['cny_per_credit'], '1')
@@ -111,7 +111,7 @@ class PricingTests(unittest.TestCase):
         with self.assertRaises(BillingError) as e:
             self.apply(multiplier='0.7')
         self.assertEqual(e.exception.status, 409)
-        self.assertEqual(self.rates['4'], .33351)
+        self.assertEqual(self.rates['4'], .3335)
         self.assertFalse(self.registry['pricing_pending'])
 
     def test_lost_native_response_blocks_calls_and_retries_without_duplicate_channel(self):
@@ -162,7 +162,7 @@ class PricingTests(unittest.TestCase):
 
     def test_invalid_partial_or_nonfinite_prices_never_reach_native(self):
         for change in ({'confirmed': False}, {'multiplier': 'NaN'}, {'multiplier': True},
-                       {'multiplier': '0'}, {'models': []}, {'version': True}):
+                       {'multiplier': '0'}, {'multiplier': '0.33351'}, {'models': []}, {'version': True}):
             with self.subTest(change=change), self.assertRaises(BillingError):
                 self.apply(**change)
         invalid = copy.deepcopy(self.data['models'])
@@ -176,7 +176,7 @@ class PricingTests(unittest.TestCase):
         updated = self.apply(version=1, multiplier='0.6')
         self.assertEqual(updated['version'], 2)
         self.assertEqual(self.rates['4'], .6)
-        self.assertEqual(self.book.read()['history'][-1]['multiplier'], '0.33351')
+        self.assertEqual(self.book.read()['history'][-1]['multiplier'], '0.3335')
 
 
 if __name__ == '__main__':

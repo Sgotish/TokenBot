@@ -4,7 +4,9 @@ The customer-facing target is **0.5 zhe of the reference CNY price**, not a
 native multiplier of 0.5. APINebula's CODEX group publishes a 0.39 native
 ratio and a 6.6702 CNY/USD reference exchange rate; its displayed discount is
 `0.39 / 6.6702 * 10 = 0.5847 zhe` (rounded to 0.58). TokenBot's target is
-`6.6702 * 0.05 = 0.33351` as the single native group multiplier. The existing
+`6.6702 * 0.05 = 0.33351`, but Sub2API persists group rates to four decimals.
+The effective native multiplier is `0.3335`, corresponding to about `0.499985`
+zhe (shown as 0.5 zhe). The existing
 1 CNY = 1 internal credit top-up rule is unchanged.
 
 GPT-6.1 Sol, GPT-6 Astra, GPT-6 Sol and GPT-5.6 Sol use APINebula's
@@ -18,31 +20,27 @@ historical bills.
 
 | Model | Input | Output | Cache read | Cache write |
 | --- | ---: | ---: | ---: | ---: |
-| gpt-6.1-sol | 0.66702 | 3.3351 | 0.033351 | 0.833775 |
-| gpt-6-astra | 3.3351 | 16.6755 | 0.33351 | 4.168875 |
-| gpt-6-sol | 0.66702 | 3.3351 | 0.066702 | 0.833775 |
-| gpt-6-luna | 0.033351 | 0.166755 | 0.0033351 | 0.04168875 |
-| gpt-5.6-sol | 1.66755 | 10.0053 | 0.166755 | 2.0844375 |
-| gpt-5.6-terra | 1.33404 | 8.00424 | 0.133404 | 1.66755 |
-| gpt-5.6-luna | 0.133404 | 0.800424 | 0.0133404 | 0.166755 |
+| gpt-6.1-sol | 0.667 | 3.335 | 0.03335 | 0.83375 |
+| gpt-6-astra | 3.335 | 16.675 | 0.3335 | 4.16875 |
+| gpt-6-sol | 0.667 | 3.335 | 0.0667 | 0.83375 |
+| gpt-6-luna | 0.03335 | 0.16675 | 0.003335 | 0.0416875 |
+| gpt-5.6-sol | 1.6675 | 10.005 | 0.16675 | 2.084375 |
+| gpt-5.6-terra | 1.334 | 8.004 | 0.1334 | 1.6675 |
+| gpt-5.6-luna | 0.1334 | 0.8004 | 0.01334 | 0.16675 |
 
 All amounts are CNY per million tokens, with the multiplier applied once.
 For 100,000 ordinary input and 300,000 output tokens on gpt-6.1-sol, the
-charge is `0.1 * 0.66702 + 0.3 * 3.3351 = CNY 1.067232`.
+charge is `0.1 * 0.667 + 0.3 * 3.335 = CNY 1.0672`.
 
 ## Production activation
 
-1. Deploy the backend price projection and website changes. Existing saved
-   `private/pricing-policy.json` is deliberately **not** overwritten on deploy.
-2. In the administrator's live price editor, load the current version, enter
-   native multiplier `0.33351` and all seven base rate rows from
-   `tokenbot/pricing_policy.py`, confirm the change and save once. The save
-   operation updates the native channel and each active customer's group rate
-   under the pricing lock; do not edit the private JSON directly.
-3. Read back the admin projection and `GET /api/pricing`. Check the version
-   increment, seven models, `reference_discount_zhe=0.5`, and the table above.
-   Check a native channel row and an active customer's group rate before
-   describing the rate as live. Historical transactions must retain old rates.
+On 2026-10-24 production price version 2 completed. An initial `0.33351`
+attempt stopped under the pending-price lock when Sub2API read back `0.3335`.
+The pending transaction was resumed with the representable `0.3335` rate;
+`pricing_pending` is now false. All three active accounts read back `0.3335`
+on each assigned group, and `GET /api/pricing` returns version 2 and seven
+models. Historical transactions retain old rates. Future edits must use at
+most four meaningful decimal places for the native multiplier.
 
 References: https://apinebula.ai/zh/pricing ;
 https://developers.openai.com/api/docs/pricing

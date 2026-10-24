@@ -148,7 +148,7 @@ class SiteControl:
                 return self.billing.view(cid, cfg, data.get('page', 1))
             if action == 'activate-billing':
                 with pricing_lock(path):
-                    return self.billing.activate(cid, cfg, lambda: self.save(path, registry), registry.get('pricing_multiplier', '0.33351'))
+                    return self.billing.activate(cid, cfg, lambda: self.save(path, registry), registry.get('pricing_multiplier', '0.3335'))
             if action == 'billing-credit':
                 return self.billing.credit(cid, cfg, data)
             if action == 'set-enabled':

@@ -74,7 +74,7 @@ class BillingTests(unittest.TestCase):
         self.activate()
         self.assertEqual(self.balance,0)
         self.assertEqual(self.cfg['billing']['status'],'active')
-        self.assertEqual(self.rates, {'5': 0.33351, '4': 0.33351})
+        self.assertEqual(self.rates, {'5': 0.3335, '4': 0.3335})
         self.billing.credit(self.cid,self.cfg,self.credit)
         self.activate()
         self.assertEqual(self.balance,10)
@@ -164,7 +164,7 @@ class BillingTests(unittest.TestCase):
         grant=lambda:self.billing.grant_trial(self.cid,self.cfg,lambda:None,'200','trial-customer-001')
         grant();grant()
         self.assertEqual(self.balance,Decimal('200'))
-        self.assertEqual(self.rates,{'5':.33351,'4':.33351})
+        self.assertEqual(self.rates,{'5':.3335,'4':.3335})
         order=self.billing.state(self.cid)['orders']['trial-customer-001']
         self.assertEqual(order['paid_amount'],'0.00')
         self.assertEqual(order['kind'],'trial_credit')
