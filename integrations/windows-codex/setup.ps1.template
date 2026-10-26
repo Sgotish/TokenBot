@@ -28,6 +28,15 @@ if ($tbOld.Contains('tokenbots_partner_20261016')) {
     $tbBlock = [regex]::Replace($tbBlock, '(?m)^experimental_bearer_token\s*=[^\r\n]*', ('experimental_bearer_token = "' + $tbKey + '"'))
     $tbBlock = [regex]::Replace($tbBlock, '(?m)^name\s*=[^\r\n]*', ('name = "' + $tbLabel + '"'))
     $tbFixed = $tbOld.Substring(0,$tbMatches[0].Index) + $tbBlock + $tbOld.Substring($tbMatches[0].Index + $tbMatches[0].Length)
+    $tbCapsPattern = '(?ms)^\[model_providers\.tokenbots_partner_20261016\.capabilities\][ \t]*\r?\n(?:(?!^[ \t]*\[).)*'
+    $tbCaps = [regex]::Matches($tbFixed, $tbCapsPattern)
+    if ($tbCaps.Count -gt 1) { throw 'Ambiguous capabilities. Nothing was changed.' }
+    if ($tbCaps.Count -eq 1) {
+        $tbCapsBlock = $tbCaps[0].Value
+        $tbCapsBlock = [regex]::Replace($tbCapsBlock, '(?m)^[ \t]*remote_compaction[ \t]*=[^\r\n]*(\r?\n|$)', '')
+        $tbCapsBlock = $tbCapsBlock.TrimEnd() + "`r`nremote_compaction = `"v2`"`r`n"
+        $tbFixed = $tbFixed.Substring(0,$tbCaps[0].Index) + $tbCapsBlock + $tbFixed.Substring($tbCaps[0].Index + $tbCaps[0].Length)
+    } else { $tbFixed += "`r`n[model_providers.tokenbots_partner_20261016.capabilities]`r`nremote_compaction = `"v2`"`r`n" }
     $tbSection = [regex]::Match($tbFixed, '(?m)^[ \t]*\[')
     $tbRoot = if ($tbSection.Success) { $tbFixed.Substring(0,$tbSection.Index) } else { $tbFixed }
     $tbRest = if ($tbSection.Success) { $tbFixed.Substring($tbSection.Index) } else { '' }
@@ -79,7 +88,7 @@ stream_max_retries = 0
 stream_idle_timeout_ms = 300000
 
 [model_providers.tokenbots_partner_20261016.capabilities]
-remote_compaction = "unsupported"
+remote_compaction = "v2"
 "@
 [IO.File]::WriteAllText($tbPath, $tbNew, (New-Object Text.UTF8Encoding($false)))
 Remove-Variable tbKey,tbNew

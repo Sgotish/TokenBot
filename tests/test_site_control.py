@@ -99,6 +99,9 @@ class SiteControlTests(unittest.TestCase):
             self.assertIsNone(z.testzip())
             self.assertEqual(json.loads(z.read('TokenBots/access.json'))['key'],a['api_key'])
             self.assertIn('TokenBots/install-native.cmd',z.namelist())
+            self.assertIn('TokenBots/repair-long-session.cmd',z.namelist())
+            self.assertIn('TokenBots/native-menu/repair-long-session.ps1',z.namelist())
+            self.assertIn('remote_compaction = "v2"',z.read('TokenBots/setup.ps1').decode('utf-8-sig'))
             launch=z.read('TokenBots/install-native.cmd').decode()
             self.assertIn('native-menu\\install.ps1',launch)
             self.assertNotIn('-File setup.ps1',launch)  # no pre-install write to the user's default home

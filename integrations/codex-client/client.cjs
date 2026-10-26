@@ -45,7 +45,7 @@ function mergeConfig(old,access,target,activeProfile){
   d.model_providers||={};d.model_providers[PROVIDER]={name:access.label,base_url:access.base_url,wire_api:'responses',
     ...(target==='cli'?{env_key:'TOKENBOTS_API_KEY'}:{experimental_bearer_token:access.key}),
     requires_openai_auth:false,supports_websockets:false,request_max_retries:0,stream_max_retries:0,stream_idle_timeout_ms:300000,
-    capabilities:{remote_compaction:'unsupported'}};
+    capabilities:{remote_compaction:'v2'}};
   return stringify(d);
 }
 async function request(a,endpoint,body,timeout=15000){

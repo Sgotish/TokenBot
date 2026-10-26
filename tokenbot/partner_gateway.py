@@ -206,7 +206,7 @@ def create_app(config, transport=None):
             # Preserve conversation affinity without forwarding cookies or arbitrary auth headers.
             request_headers = {name: request.headers[name] for name in (
                 'session_id', 'conversation_id', 'x-codex-turn-state', 'x-codex-turn-metadata',
-                'originator', 'openai-beta', 'x-client-request-id') if name in request.headers}
+                'originator', 'openai-beta', 'x-codex-beta-features', 'x-client-request-id') if name in request.headers}
             if client_id != 'partner':
                 for name in ('session_id', 'conversation_id'):
                     if name in request_headers:
@@ -235,6 +235,12 @@ def create_app(config, transport=None):
             try:
                 async for chunk in upstream.aiter_bytes():
                     yield chunk
+            except httpx.HTTPError:
+                # Headers may already be 200. Preserve stream failure rather than retrying
+                # an ambiguous, possibly billed model/tool execution a second time.
+                record_failure(state.config, model, 502, 'upstream_stream_interrupted',
+                               time.monotonic()-started, False)
+                raise
             finally:
                 await cleanup()
 

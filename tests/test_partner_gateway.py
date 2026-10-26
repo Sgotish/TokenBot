@@ -270,3 +270,38 @@ def test_buffer_capacity_covers_response_lifetime_and_releases_on_cancel():
         finish.set();await asyncio.gather(*tasks[1:]);assert guard.active==0
         await guard(scope,receive,send);assert entered==5 and guard.active==0
     asyncio.run(scenario())
+
+
+def test_native_compaction_v2_preserves_trigger_headers_and_opaque_output():
+    request_body={'model':MODEL,'stream':True,'store':False,'input':[{'role':'user','content':'Synthetic fact'}, {'type':'compaction_trigger'}]}
+    output=b'data: {"type":"response.output_item.done","item":{"type":"compaction","encrypted_content":"opaque-synthetic"}}\n\ndata: {"type":"response.completed","response":{"id":"r","status":"completed"}}\n\n'
+    def upstream(request):
+        assert json.loads(request.content)==request_body
+        assert request.headers['x-codex-beta-features']=='remote_compaction_v2'
+        assert 'cookie' not in request.headers
+        return httpx.Response(200,content=output,headers={'content-type':'text/event-stream','x-codex-turn-state':'opaque-state'})
+    cfg={'expires_at':None,'allowed_ips':['testclient'],'key':'synthetic'}
+    with TestClient(create_app(cfg,httpx.MockTransport(upstream))) as c:
+        r=c.post('/v1/responses',json=request_body,headers={'Authorization':'Bearer synthetic','x-codex-beta-features':'remote_compaction_v2','Cookie':'private'})
+        assert r.status_code==200 and r.content==output and r.headers['x-codex-turn-state']=='opaque-state'
+
+
+def test_broken_upstream_stream_is_recorded_without_retry_and_releases_slot(tmp_path):
+    from tokenbot.gateway_events import recent_failures
+    calls=[]
+    class Broken(httpx.AsyncByteStream):
+        async def __aiter__(self):
+            yield b'data: {"type":"response.created"}\n\n'
+            raise httpx.ReadError('synthetic interruption')
+    def upstream(request):
+        calls.append(request)
+        return httpx.Response(200,stream=Broken(),headers={'content-type':'text/event-stream'})
+    cfg={'expires_at':None,'allowed_ips':['testclient'],'key':'synthetic','selection_path':str(tmp_path/'selection.json')}
+    app=create_app(cfg,httpx.MockTransport(upstream))
+    with TestClient(app,raise_server_exceptions=False) as c:
+        for _ in range(2):
+            c.post('/v1/responses',json={'model':MODEL,'input':'synthetic'},headers={'Authorization':'Bearer synthetic'})
+            assert app.state.pool_state.active==0
+    assert len(calls)==2
+    events=recent_failures(cfg)
+    assert len(events)==2 and all(x['error_code']=='upstream_stream_interrupted' and not x['not_forwarded'] for x in events)

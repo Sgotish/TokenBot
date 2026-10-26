@@ -230,8 +230,10 @@ class SiteControl:
                 if file.suffix in ('.ps1','.js','.cjs'): put('native-menu/'+file.name,file.read_bytes())
             put('native-menu/native-access.json',json.dumps({'origin':access['public_origin'],'key':key}))
             put('install-native.cmd','@echo off\r\ncd /d "%~dp0"\r\npowershell.exe -NoProfile -ExecutionPolicy Bypass -File native-menu\\install.ps1\r\nif errorlevel 1 (echo Installation failed. Keep this window and send the error text without your Key.)\r\npause\r\n')
+            put('repair-long-session.cmd','@echo off\r\ncd /d "%~dp0"\r\necho Close TokenBots Codex before continuing. This only repairs its existing configuration.\r\npause\r\npowershell.exe -NoProfile -ExecutionPolicy Bypass -File native-menu\\repair-long-session.ps1\r\nif errorlevel 1 (echo Repair failed. Keep this window; do not send your Key.)\r\npause\r\n')
             put('README.txt',('TokenBots 专属测试接入包\n\n仅给当前账户使用，包含私密 API Key。不要上传公开仓库或转发其他客户。\n'
                 'Windows 原生用量菜单：退出 Codex，完整解压后运行 install-native.cmd，随后从 TokenBots Codex 快捷方式启动。\n'
+                '已安装的 Windows 客户：用原有 Key 下载新包，退出 TokenBots 后运行 repair-long-session.cmd，只更新长会话压缩配置，不重装、不换 Key、不移动项目或历史。重开原快捷方式继续使用。\n'
                 'Windows x64 使用已审核且校验签名的固定版本，不再依赖官网滚动版本；无需预装 Node.js。配置与原版隔离，必须使用 TokenBots Codex 快捷方式并新建对话。\n'
                 '同一账户的专属 Key 可以在不同电脑使用，用量按账户汇总；不同用户请各自登录下载，不要共用包。\n'
                 'Mac / Linux / Windows CLI：先安装 Node.js 20+ 和官方 Codex；运行对应 setup-desktop 或 setup-cli。Linux 可执行 sh setup-cli.command。\n'
