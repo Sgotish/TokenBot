@@ -3,7 +3,7 @@ import httpx
 import json
 import zstandard
 from fastapi.testclient import TestClient
-from tokenbot.partner_gateway import create_app, MODEL
+from tokenbot.partner_gateway import create_app, MODEL, MAX_REQUEST_BYTES
 
 
 def test_gateway_limits_auth_paths_and_preserves_stream():
@@ -20,14 +20,14 @@ def test_gateway_limits_auth_paths_and_preserves_stream():
         assert c.get('/v1/models').json()['data'][0]['id'] == MODEL
         assert c.post('/v1/responses',json={'model':'other'}).status_code == 400
         assert c.post('/v1/responses',json={'model':MODEL,'background':True}).status_code == 400
-        assert c.post('/v1/responses',content=b'x'*(2*1024*1024+1)).status_code == 413
+        assert c.post('/v1/responses',content=b'x'*(MAX_REQUEST_BYTES+1)).status_code == 413
         r=c.post('/v1/responses',json={'model':MODEL,'input':'hi','stream':True})
         assert r.status_code==200 and r.content==b'data: {"test":"synthetic"}\n\n'
         assert len(calls)==1 and str(calls[0].url)=='http://127.0.0.1:8180/v1/responses'
         compressed=zstandard.ZstdCompressor().compress(json.dumps({'model':MODEL,'input':'hi'}).encode())
         assert c.post('/v1/responses',content=compressed,headers={'content-encoding':'zstd'}).status_code==200
         assert json.loads(calls[-1].content)['model']==MODEL
-        bomb=zstandard.ZstdCompressor().compress(b'x'*(2*1024*1024+1))
+        bomb=zstandard.ZstdCompressor().compress(b'x'*(MAX_REQUEST_BYTES+1))
         assert c.post('/v1/responses',content=bomb,headers={'content-encoding':'zstd'}).status_code==413
         assert c.get('/v1/models?client_version=0.162').status_code==200
         cfg['allowed_ips']=[]
@@ -211,4 +211,62 @@ def test_portal_security_middleware_preserves_queued_http_disconnect(tmp_path):
                 assert app.state.pool_state.pending==0 and len(calls)==1
                 assert next(m for m in messages if m['type']=='http.response.start')['status']==499
                 finish.set();await first
+    asyncio.run(scenario())
+
+
+def test_large_plain_and_zstd_bodies_preserved_and_limits_recorded(tmp_path):
+    from tokenbot.gateway_events import recent_failures
+    cfg={'expires_at':None,'allowed_ips':['testclient'],'key':'synthetic',
+         'selection_path':str(tmp_path/'selection.json')}
+    calls=[]
+    def upstream(request):
+        calls.append(request.content)
+        assert 'content-encoding' not in request.headers
+        return httpx.Response(200,json={'ok':True})
+    payload=json.dumps({'model':MODEL,'input':'synthetic Unicode 测试'}).encode()
+    # JSON whitespace is part of transport size, but does not inflate model token usage.
+    large=payload+b' '*(MAX_REQUEST_BYTES-len(payload))
+    with TestClient(create_app(cfg,httpx.MockTransport(upstream))) as c:
+        c.headers['authorization']='Bearer synthetic'
+        for encoding,body in [('identity',large),('zstd',zstandard.ZstdCompressor().compress(large))]:
+            assert c.post('/v1/responses',content=body,headers={'content-encoding':encoding}).status_code==200
+            assert calls[-1]==large
+        for encoding,body in [('identity',large+b' '),('zstd',zstandard.ZstdCompressor().compress(large+b' '))]:
+            r=c.post('/v1/responses',content=body,headers={'content-encoding':encoding})
+            assert r.status_code==413 and '16 MiB' in r.json()['error']['message']
+            assert r.headers['x-tokenbot-error-source']=='request_body_too_large'
+            event=recent_failures(cfg)[0]
+            assert event['request_id']==r.headers['x-request-id'] and event['not_forwarded']
+            assert 'synthetic Unicode' not in json.dumps(event)
+        assert len(calls)==2
+        # Chunked uploads cannot bypass the bound, and a failed request does not leak a slot.
+        def chunks():
+            for _ in range(17):yield b' '*1024*1024
+        assert c.post('/v1/responses',content=chunks()).status_code==413
+        assert c.post('/v1/responses',content=payload).status_code==200
+
+
+def test_buffer_capacity_covers_response_lifetime_and_releases_on_cancel():
+    import asyncio
+    from tokenbot.partner_gateway import BufferedRequestLimit
+    async def scenario():
+        entered=0;ready=asyncio.Event();finish=asyncio.Event();messages=[]
+        async def app(scope,receive,send):
+            nonlocal entered
+            entered+=1
+            if entered==4:ready.set()
+            await finish.wait()
+        async def receive():return {'type':'http.request','body':b''}
+        async def send(message):messages.append(message)
+        guard=BufferedRequestLimit(app)
+        scope={'type':'http','method':'POST','path':'/v1/responses'}
+        tasks=[asyncio.create_task(guard(scope,receive,send)) for _ in range(4)]
+        await ready.wait();await guard(scope,receive,send)
+        assert messages[0]['status']==503 and entered==4
+        tasks[0].cancel()
+        try:await tasks[0]
+        except asyncio.CancelledError:pass
+        assert guard.active==3
+        finish.set();await asyncio.gather(*tasks[1:]);assert guard.active==0
+        await guard(scope,receive,send);assert entered==5 and guard.active==0
     asyncio.run(scenario())

@@ -24,6 +24,30 @@ from tokenbot.gateway_events import record_failure
 
 ROOT = Path(__file__).resolve().parents[1]
 MODEL = 'gpt-6.1-sol'
+MAX_REQUEST_BYTES = 16 * 1024 * 1024
+
+
+class BufferedRequestLimit:
+    """Bound bodies retained by uploads, queue waiters and streaming responses."""
+    def __init__(self, app):
+        self.app = app
+        self.active = 0
+
+    async def __call__(self, scope, receive, send):
+        limited = (scope['type'] == 'http' and scope.get('method') == 'POST'
+                   and scope.get('path') in ('/v1/responses', '/v1/chat/completions'))
+        if not limited:
+            return await self.app(scope, receive, send)
+        if self.active >= 4:
+            response = JSONResponse({'error': {'message': 'Request capacity is busy; retry later',
+                                    'type': 'capacity'}}, status_code=503,
+                                    headers={'Retry-After': '5', 'X-TokenBot-Error-Source': 'bridge_capacity'})
+            return await response(scope, receive, send)
+        self.active += 1
+        try:
+            await self.app(scope, receive, send)
+        finally:
+            self.active -= 1
 
 
 def create_app(config, transport=None):
@@ -45,6 +69,7 @@ def create_app(config, transport=None):
         await client.aclose()
 
     app = FastAPI(docs_url=None, redoc_url=None, openapi_url=None, lifespan=lifespan)
+    app.add_middleware(BufferedRequestLimit)
 
     if config.get("public_origin"):
         install_portal(app, config, registry)
@@ -85,17 +110,21 @@ def create_app(config, transport=None):
         body = b''
         if request.method == 'POST':
             try:
-                async with asyncio.timeout(10):
-                    async for chunk in request.stream():
-                        body += chunk
-                        if len(body) > 2 * 1024 * 1024:
-                            return error('Test input exceeds 2 MiB', 413)
+                with io.BytesIO() as buffer:
+                    async with asyncio.timeout(60):
+                        async for chunk in request.stream():
+                            if buffer.tell() + len(chunk) > MAX_REQUEST_BYTES:
+                                return failed('Request exceeds 16 MiB; compact the conversation or reduce attachments before retrying',
+                                              413, 'request_body_too_large')
+                            buffer.write(chunk)
+                    body = buffer.getvalue()
                 encoding = request.headers.get('content-encoding', 'identity').lower()
                 if encoding == 'zstd':
-                    with zstandard.ZstdDecompressor(max_window_size=8192).stream_reader(io.BytesIO(body)) as reader:
-                        body = reader.read(2 * 1024 * 1024 + 1)
-                    if len(body) > 2 * 1024 * 1024:
-                        return error('Decompressed input exceeds 2 MiB', 413)
+                    with zstandard.ZstdDecompressor(max_window_size=16384).stream_reader(io.BytesIO(body)) as reader:
+                        body = reader.read(MAX_REQUEST_BYTES + 1)
+                    if len(body) > MAX_REQUEST_BYTES:
+                        return failed('Decompressed request exceeds 16 MiB; compact the conversation or reduce attachments before retrying',
+                                      413, 'request_body_too_large')
                 elif encoding != 'identity':
                     return error('Unsupported request encoding', 415)
                 data = json.loads(body)
@@ -105,6 +134,8 @@ def create_app(config, transport=None):
                 model = data.get('model')
                 if data.get('background') or data.get('service_tier') not in (None, 'auto', 'default'):
                     return error('Background and priority requests are disabled', 400)
+                # Retain only the wire body while queued/streaming, not the parsed conversation too.
+                del data
             except (ValueError, UnicodeError, TimeoutError, zstandard.ZstdError):
                 return error('Invalid request', 400)
         if request.method == 'GET':
