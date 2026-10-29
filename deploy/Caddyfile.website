@@ -1,0 +1,17 @@
+# Add to the existing Caddyfile; do not replace the pilot API site's routes.
+# DNS: @ A 159.203.4.206; www CNAME tokenbots.top (TTL 600).
+# Both proxy hops use verified HTTPS. No account or private response caching.
+tokenbots.top {
+    bind 159.203.4.206
+    reverse_proxy https://tokenbots-quota.onrender.com {
+        header_up Host tokenbots-quota.onrender.com
+        transport http {
+            dial_timeout 10s
+            response_header_timeout 90s
+        }
+    }
+}
+www.tokenbots.top {
+    bind 159.203.4.206
+    redir https://tokenbots.top{uri} permanent
+}

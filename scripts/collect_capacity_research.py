@@ -9,10 +9,12 @@ import time
 import re
 from collections import Counter
 import urllib.parse
+import urllib.error
 import urllib.request
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from tokenbot.client import NoRedirect
+from tokenbot.panel_session import login, invalidate
 from tokenbot.capacity_research import connect, usage_row, save_scan, save_quota, report, prune, customer_visual
 
 
@@ -25,15 +27,24 @@ def panel_client(deadline):
         req = urllib.request.Request('http://127.0.0.1:8180/api/v1'+path, method=method,
             data=json.dumps(body).encode() if body is not None else None,
             headers={'Content-Type': 'application/json', **({'Authorization': 'Bearer '+token} if token else {})})
-        with opener.open(req, timeout=min(10, remaining)) as response:
-            raw = response.read(8*1024*1024+1)
+        try:
+            with opener.open(req, timeout=min(10, remaining)) as response:
+                raw = response.read(8*1024*1024+1)
+        except urllib.error.HTTPError as exc:
+            if exc.code == 401 and token:
+                invalidate(token)
+            raise
         if len(raw) > 8*1024*1024:
             raise ValueError('Oversized panel response')
         data = json.loads(raw)
         if data.get('code') != 0:
             raise ValueError('Panel rejected request')
         return data['data']
-    return panel
+    def cached(method, path, token=None, body=None):
+        if method == 'POST' and path == '/auth/login':
+            return {'access_token': login(panel, body)}
+        return panel(method, path, token, body)
+    return cached
 
 
 def fetch_usage(panel, token, start, end, max_pages=200):

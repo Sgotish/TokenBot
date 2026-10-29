@@ -11,6 +11,7 @@ import urllib.error
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from tokenbot.client import NoRedirect
 from tokenbot.usage_snapshot import account_view, record_view, quota_view, epoch
+from tokenbot.panel_session import login, invalidate
 
 
 def collect(config, panel_override=None, now_override=None, account_snapshot=None):
@@ -19,15 +20,21 @@ def collect(config, panel_override=None, now_override=None, account_snapshot=Non
         req = urllib.request.Request('http://127.0.0.1:8180/api/v1'+path, method=method,
             data=json.dumps(body).encode() if body is not None else None,
             headers={'Content-Type':'application/json', **({'Authorization':'Bearer '+token} if token else {})})
-        with opener.open(req, timeout=30) as r:
-            data = json.load(r)
+        try:
+            with opener.open(req, timeout=30) as r:
+                data = json.load(r)
+        except urllib.error.HTTPError as exc:
+            if exc.code == 401 and token:
+                invalidate(token)
+            raise
         if data.get('code') != 0:
             raise RuntimeError('Panel error')
         return data['data']
     if panel_override is not None:
         panel = panel_override
-    admin = panel('POST','/auth/login',body=config['admin'])['access_token'] if account_snapshot is None else None
-    user = panel('POST','/auth/login',body=config['partner'])['access_token']
+    authenticate = (lambda credentials: panel('POST','/auth/login',body=credentials)['access_token']) if panel_override is not None else (lambda credentials: login(panel, credentials))
+    admin = authenticate(config['admin']) if account_snapshot is None else None
+    user = authenticate(config['partner'])
     now = time.time() if now_override is None else now_override
     try:
         previous = json.loads(Path(config['snapshot_path']).read_text()).get('accounts', [])
@@ -57,7 +64,8 @@ def collect(config, panel_override=None, now_override=None, account_snapshot=Non
         accounts.append(view)
     if account_snapshot is not None:
         accounts = account_snapshot
-    stats = panel('GET','/usage/stats',user)
+    end = time.strftime('%Y-%m-%d', time.gmtime(now))
+    stats = panel('GET','/usage/stats?start_date=2000-01-01&end_date='+end+'&timezone=UTC',user)
     records = panel('GET','/usage?page=1&page_size=30',user)['items']
     return {'generated_at': now, 'quota_refresh_interval_seconds': 60, 'accounts':accounts,
             'totals':{k:stats.get(k) for k in ['total_requests','total_tokens','total_input_tokens','total_output_tokens','total_cache_read_tokens']},
@@ -76,13 +84,15 @@ def main():
         try:data=json.loads(dest.read_text())
         except (OSError,ValueError):data={'generated_at':None,'accounts':[],'totals':{},'records':[]}
         data.update(error='后台用量同步暂时失败，保留上次记录',failed_at=time.time())
+        data['accounts'] = [{**a, 'snapshot_stale': True,
+                             'windows': [{**w, 'stale': True} for w in a.get('windows', [])]}
+                            for a in data.get('accounts', [])]
     tmp=dest.with_suffix('.tmp')
     fd=os.open(tmp,os.O_WRONLY|os.O_CREAT|os.O_TRUNC,0o640)
     with os.fdopen(fd,'w') as f:json.dump(data,f,ensure_ascii=False)
     os.chown(tmp,0,grp.getgrnam('tokenbot-bridge').gr_gid)
     os.chmod(tmp,0o640);tmp.replace(dest)
-    if failed:raise SystemExit('Usage snapshot refresh failed; credentials and upstream errors suppressed.')
-    print('Sanitized partner usage snapshot updated.')
+    print('Partner snapshot failed; continuing independent customers.' if failed else 'Sanitized partner usage snapshot updated.')
     # Each customer authenticates as its own non-admin upstream user. Never filter a
     # global usage dump client-side, and never query quota again for every customer.
     for file in sorted(Path(config['customers_dir']).glob('*.json')) if config.get('customers_dir') else []:
@@ -93,6 +103,7 @@ def main():
         try:
             snapshot=collect(customer,account_snapshot=data['accounts'])
         except Exception:
+            failed=True
             try:snapshot=json.loads(target.read_text())
             except (OSError,ValueError):snapshot={'generated_at':None,'accounts':[],'totals':{},'records':[]}
             snapshot.update(error='客户用量同步失败，保留历史记录',failed_at=time.time())
@@ -100,6 +111,7 @@ def main():
         fd=os.open(temp,os.O_WRONLY|os.O_CREAT|os.O_TRUNC,0o640)
         with os.fdopen(fd,'w') as f:json.dump(snapshot,f,ensure_ascii=False)
         os.chown(temp,0,grp.getgrnam('tokenbot-bridge').gr_gid);os.chmod(temp,0o640);temp.replace(target)
+    if failed:raise SystemExit('One or more usage snapshots failed; independent customers were still attempted.')
 
 
 if __name__=='__main__':main()

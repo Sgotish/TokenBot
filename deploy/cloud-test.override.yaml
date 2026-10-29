@@ -1,4 +1,4 @@
-# Small, private two-account trial. No commercial billing in this instance.
+# Small shared pilot; monitor capacity before increasing customer traffic.
 services:
   gateway:
     mem_limit: 384m
@@ -14,5 +14,5 @@ services:
     mem_limit: 192m
     command: ["postgres", "-c", "max_connections=30", "-c", "shared_buffers=32MB", "-c", "work_mem=2MB", "-c", "maintenance_work_mem=32MB"]
   redis:
-    mem_limit: 96m
-    command: ["sh", "-c", 'exec redis-server --appendonly yes --requirepass "$$REDIS_PASSWORD" --maxmemory 48mb --maxmemory-policy noeviction']
+    mem_limit: 160m
+    command: ["sh", "-c", 'exec redis-server --appendonly yes --requirepass "$$REDIS_PASSWORD" --maxmemory 96mb --maxmemory-policy noeviction']

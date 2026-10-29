@@ -4,8 +4,10 @@ import argparse
 import subprocess
 
 REMOTE = r'''
-import json, time, urllib.request
+import json, time, urllib.request, subprocess, sys
 from pathlib import Path
+sys.path.insert(0, '/opt/tokenbot-pilot')
+from tokenbot.panel_session import login
 
 class NoRedirect(urllib.request.HTTPRedirectHandler):
     def redirect_request(self, *args, **kwargs):
@@ -23,7 +25,9 @@ def main():
     collector = json.loads((root/'collector.json').read_text())
     bridge = json.loads((root/'partner.json').read_text())
     base = 'http://127.0.0.1:8180/api/v1'
-    token = request(base+'/auth/login', body=collector['admin'])['data']['access_token']
+    def authenticate(credentials):
+        return login(lambda method, path, body: request(base+path, body=body)['data'], credentials)
+    token = authenticate(collector['admin'])
     def panel(path):
         result = request(base+path, token)
         if result.get('code') != 0:
@@ -39,10 +43,16 @@ def main():
     usage = request(bridge['public_origin']+'/v1/usage', bridge['key'])
     accounts = [panel('/admin/accounts/'+str(i)) for i in collector['accounts']]
     groups = [panel('/admin/groups/'+str(p['group_id'])) for p in bridge['pools'].values()]
-    user_token = request(base+'/auth/login', body=collector['partner'])['data']['access_token']
+    user_token = authenticate(collector['partner'])
     key_items = request(base+'/keys?page=1&page_size=100', user_token)['data']['items']
     expected_keys = {bridge['key']} | {p['key'] for p in bridge['pools'].values()}
     live_keys = [k for k in key_items if k.get('key') in expected_keys]
+    redis = json.loads(subprocess.check_output(['docker', 'inspect', 'tokenbot-pilot-redis-1']))[0]
+    env = dict(s.split('=', 1) for s in redis['Config']['Env'] if '=' in s)
+    raw = subprocess.check_output(['docker', 'exec', '-e', 'REDISCLI_AUTH='+env['REDIS_PASSWORD'],
+        'tokenbot-pilot-redis-1', 'redis-cli', 'INFO', 'memory'], text=True, timeout=10)
+    memory = dict(line.split(':', 1) for line in raw.splitlines() if ':' in line)
+    used, maximum = int(memory['used_memory']), int(memory['maxmemory'])
     checks = {
         'two_schedulable_accounts': len(accounts) == 2 and all(a.get('status') == 'active' and a.get('schedulable') is True for a in accounts),
         'three_pools': set(bridge['pools']) == {'auto','plus','pro'},
@@ -57,6 +67,7 @@ def main():
         'monitoring_enabled': settings.get('ops_monitoring_enabled') is True,
         'realtime_monitoring_enabled': settings.get('ops_realtime_monitoring_enabled') is True and available.get('enabled') is True and concurrency.get('enabled') is True,
         'db_and_redis_healthy': overview.get('system_metrics', {}).get('db_ok') is True and overview.get('system_metrics', {}).get('redis_ok') is True,
+        'redis_memory_headroom': maximum > 0 and used < maximum*.8,
         'usage_collector_fresh': usage.get('snapshot_stale') is False,
         'upstream_quota_fresh': len(usage.get('accounts', [])) == 2 and all(
             a.get('source') == 'quota_api' and a.get('snapshot_stale') is False and not a.get('refresh_error')
@@ -66,6 +77,7 @@ def main():
     report = {
         'checked_at_utc': time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime()),
         'checks': checks,
+        'redis_memory': {'used_bytes':used, 'max_bytes':maximum, 'alert_threshold_percent':80},
         'accounts': [{'label': label, 'status': a.get('status'), 'schedulable': a.get('schedulable')} for label,a in zip(collector['accounts'].values(),accounts)],
         'selected_pool': usage.get('selected_pool'),
         'last_hour': {k: overview.get(k) for k in ('request_count_total','success_count','error_count_total','upstream_429_count','token_consumed','duration','ttft')},

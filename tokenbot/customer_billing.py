@@ -11,6 +11,7 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
+from .panel_session import login, invalidate
 
 
 class BillingError(Exception):
@@ -78,7 +79,9 @@ class Panel:
             if len(raw)>2_000_000 or result.get('code') != 0:
                 raise ValueError()
             return result['data']
-        except (urllib.error.URLError, TimeoutError, ValueError, KeyError):
+        except (urllib.error.URLError, TimeoutError, ValueError, KeyError) as exc:
+            if isinstance(exc, urllib.error.HTTPError) and exc.code == 401 and token:
+                invalidate(token)
             raise BillingError('账本操作未确认，请刷新或使用相同订单号重试。', 503) from None
 
 
@@ -118,9 +121,13 @@ class CustomerBilling:
 
     def admin(self, panel):
         config = json.loads((self.private/'collector.json').read_text())
+        if isinstance(panel, Panel):
+            return login(panel, config['admin'])
         return panel('POST', '/auth/login', body=config['admin'])['access_token']
 
     def customer(self, panel, source):
+        if isinstance(panel, Panel):
+            return login(panel, source['partner'])
         return panel('POST', '/auth/login', body=source['partner'])['access_token']
 
     def stats(self, panel, token):

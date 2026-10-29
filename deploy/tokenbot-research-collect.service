@@ -12,6 +12,6 @@ NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=strict
 ProtectHome=true
-ReadWritePaths=/var/lib/tokenbot-research
+ReadWritePaths=/var/lib/tokenbot-research /var/lib/tokenbot-auth
 TimeoutStartSec=80
 MemoryMax=192M
