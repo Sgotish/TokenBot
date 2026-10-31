@@ -1,0 +1,37 @@
+[Unit]
+Description=TokenBots always-on website
+After=network-online.target
+Wants=network-online.target
+StartLimitIntervalSec=300
+StartLimitBurst=10
+
+[Service]
+Type=simple
+User=tokenbot-website
+Group=tokenbot-website
+WorkingDirectory=/opt/tokenbot-website/current
+ExecStart=/opt/tokenbot-website/venv/bin/python /opt/tokenbot-website/run.py
+Restart=always
+RestartSec=10
+TimeoutStopSec=30
+MemoryHigh=144M
+MemoryMax=192M
+MemorySwapMax=128M
+CPUQuota=75%
+TasksMax=64
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+CapabilityBoundingSet=
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+Environment=PYTHONDONTWRITEBYTECODE=1
+Environment=PYTHONUNBUFFERED=1
+
+[Install]
+WantedBy=multi-user.target
