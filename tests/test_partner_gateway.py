@@ -177,6 +177,51 @@ def test_queue_timeout_reports_server_capacity_without_upstream_execution():
     asyncio.run(scenario())
 
 
+def test_two_active_two_queued_fifo_and_overflow_never_calls_model():
+    import asyncio
+    async def scenario():
+        calls=[]; gates=[asyncio.Event() for _ in range(4)]
+        async def upstream(request):
+            number=json.loads(request.content)['input']
+            calls.append(number)
+            await gates[number].wait()
+            return httpx.Response(200,json={'number':number})
+        cfg={'expires_at':None,'allowed_ips':['127.0.0.1'],'key':'synthetic',
+             'max_concurrency':2,'max_pending':2,'queue_timeout_seconds':120}
+        app=create_app(cfg,httpx.MockTransport(upstream))
+        async with app.router.lifespan_context(app):
+            async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app),base_url='http://test',headers={'authorization':'Bearer synthetic'}) as c:
+                async def call(n):return await c.post('/v1/responses',json={'model':MODEL,'input':n})
+                tasks=[]
+                for n in range(4):
+                    tasks.append(asyncio.create_task(call(n)))
+                    while len(calls)+app.state.pool_state.pending<n+1:await asyncio.sleep(.001)
+                assert calls==[0,1] and app.state.pool_state.pending==2
+                overflow=await call(4)
+                assert overflow.status_code==503 and overflow.headers['retry-after']=='5'
+                # Exercise several disconnect polling intervals before freeing capacity.
+                await asyncio.sleep(.6)
+                gates[0].set()
+                while len(calls)<3:await asyncio.sleep(.001)
+                assert calls==[0,1,2]
+                gates[2].set()
+                while len(calls)<4:await asyncio.sleep(.001)
+                assert calls==[0,1,2,3]
+                gates[1].set();gates[3].set()
+                results=await asyncio.gather(*tasks)
+                assert all(r.status_code==200 for r in results)
+                assert app.state.pool_state.active==app.state.pool_state.pending==0
+    asyncio.run(asyncio.wait_for(scenario(),5))
+
+
+def test_queue_configuration_cannot_exceed_body_memory_budget():
+    import pytest
+    base={'expires_at':None,'allowed_ips':['testclient'],'key':'synthetic'}
+    for limits in ({'max_concurrency':5}, {'max_concurrency':2,'max_pending':3},
+                   {'queue_timeout_seconds':181}):
+        with pytest.raises(ValueError):create_app({**base,**limits})
+
+
 def test_portal_security_middleware_preserves_queued_http_disconnect(tmp_path):
     import asyncio
     async def scenario():

@@ -25,6 +25,7 @@ from tokenbot.gateway_events import record_failure
 ROOT = Path(__file__).resolve().parents[1]
 MODEL = 'gpt-6.1-sol'
 MAX_REQUEST_BYTES = 16 * 1024 * 1024
+MAX_BUFFERED_REQUESTS = 4
 
 
 class BufferedRequestLimit:
@@ -38,7 +39,7 @@ class BufferedRequestLimit:
                    and scope.get('path') in ('/v1/responses', '/v1/chat/completions'))
         if not limited:
             return await self.app(scope, receive, send)
-        if self.active >= 4:
+        if self.active >= MAX_BUFFERED_REQUESTS:
             response = JSONResponse({'error': {'message': 'Request capacity is busy; retry later',
                                     'type': 'capacity'}}, status_code=503,
                                     headers={'Retry-After': '5', 'X-TokenBot-Error-Source': 'bridge_capacity'})
@@ -52,12 +53,12 @@ class BufferedRequestLimit:
 
 def create_app(config, transport=None):
     concurrency = int(config.get('max_concurrency', 1))
-    if concurrency < 1 or concurrency > 8:
+    if concurrency < 1 or concurrency > MAX_BUFFERED_REQUESTS:
         raise ValueError('Invalid bridge concurrency')
     lock = asyncio.Semaphore(concurrency)
-    max_pending = int(config.get('max_pending', 4))
+    max_pending = int(config.get('max_pending', MAX_BUFFERED_REQUESTS - concurrency))
     queue_timeout = float(config.get('queue_timeout_seconds', 30))
-    if not 0 <= max_pending <= 16 or not 0 < queue_timeout <= 60:
+    if not 0 <= max_pending <= MAX_BUFFERED_REQUESTS - concurrency or not 0 < queue_timeout <= 180:
         raise ValueError('Invalid bridge queue limits')
     registry = ClientRegistry(config)
     client = httpx.AsyncClient(base_url='http://127.0.0.1:8180', trust_env=False,
@@ -146,6 +147,10 @@ def create_app(config, transport=None):
             if sum(s.pending for s in registry.states.values()) >= max_pending:
                 return failed('Server queue is full; subscription quota was not checked or consumed', 503, 'bridge_capacity', busy_headers)
             state.pending += 1
+            # Keep one semaphore waiter for this request. Cancelling/recreating it
+            # on every disconnect poll loses its FIFO position under contention.
+            waiter = asyncio.create_task(lock.acquire())
+            acquired = False
             try:
                 while True:
                     remaining = queue_timeout - (time.monotonic() - queue_start)
@@ -153,13 +158,21 @@ def create_app(config, transport=None):
                         return failed('Server queue wait timed out; retry later', 503, 'bridge_capacity', busy_headers)
                     if await request.is_disconnected():
                         return error('Client disconnected before model execution', 499)
-                    try:
-                        await asyncio.wait_for(lock.acquire(), min(.25, remaining))
+                    done, _ = await asyncio.wait({waiter}, timeout=min(.25, remaining))
+                    if done:
+                        acquired = waiter.result()
                         break
-                    except TimeoutError:
-                        continue
             finally:
                 state.pending -= 1
+                if not acquired:
+                    waiter.cancel()
+                    try:
+                        # A slot may have arrived just as cancellation/timeout
+                        # happened; return it instead of leaking capacity.
+                        if await waiter:
+                            lock.release()
+                    except asyncio.CancelledError:
+                        pass
         else:
             await lock.acquire()
         queue_start_acquired = time.monotonic()

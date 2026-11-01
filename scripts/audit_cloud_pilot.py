@@ -55,6 +55,8 @@ def main():
     used, maximum = int(memory['used_memory']), int(memory['maxmemory'])
     checks = {
         'two_schedulable_accounts': len(accounts) == 2 and all(a.get('status') == 'active' and a.get('schedulable') is True for a in accounts),
+        'upstream_concurrency_covers_bridge': all(a.get('concurrency', 0) >= bridge.get('max_concurrency', 1) for a in accounts),
+        'bridge_queue_fits_memory_budget': bridge.get('max_concurrency', 1) + bridge.get('max_pending', 4-bridge.get('max_concurrency', 1)) <= 4,
         'three_pools': set(bridge['pools']) == {'auto','plus','pro'},
         'zero_test_pool_multiplier': all(g.get('rate_multiplier') == 0 for g in groups),
         'public_model_available': any(m.get('id') == 'gpt-6.1-sol' for m in models.get('data', [])),
