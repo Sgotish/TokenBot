@@ -78,6 +78,7 @@ Start-Process -FilePath (Join-Path `$PSScriptRoot 'ChatGPT.exe') -WorkingDirecto
 "@
 $launchPath = Join-Path $appDir 'launch-tokenbots.ps1'
 [IO.File]::WriteAllText($launchPath, $launch, (New-Object Text.UTF8Encoding($true)))
+& (Join-Path $PSScriptRoot 'enable-ota.ps1') -AppDirectory $appDir
 $shell = New-Object -ComObject WScript.Shell
 $shortcut = $shell.CreateShortcut((Join-Path ([Environment]::GetFolderPath('Desktop')) 'TokenBots Codex.lnk'))
 $shortcut.TargetPath = Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
