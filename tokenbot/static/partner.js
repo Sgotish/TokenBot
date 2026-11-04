@@ -5,6 +5,9 @@ function show(yes){$('login').hidden=yes;$('dashboard').hidden=!yes;$('refresh')
 function el(tag,text,cls){const e=document.createElement(tag);if(text!==undefined)e.textContent=text;if(cls)e.className=cls;return e}
 const dt=s=>s?new Date(typeof s==='number'?s*1000:s).toLocaleString():'未知';const num=n=>Number(n||0).toLocaleString();
 function render(d){show(true);$('client-label').textContent=d.client_label||'';$('current').textContent=d.pools.find(x=>x.id===d.selected_pool)?.label||'未知';$('activity').textContent=`进行中 ${d.active_requests} · 排队 ${d.queued_requests||0} · 并发保护 2`;$('totals').textContent=`${num(d.totals.total_requests)} / ${num(d.totals.total_tokens)}`;$('updated').textContent=`数据同步：${dt(d.generated_at)}`;
+const allowance=d.allowance;
+$('allowance').textContent=!allowance?'—':allowance.remaining==null||d.snapshot_stale||d.error?'待更新':(allowance.trial?'¥':'$')+Number(allowance.remaining).toLocaleString('zh-CN',{minimumFractionDigits:2,maximumFractionDigits:8});
+$('allowance-note').textContent=allowance?(allowance.trial?'剩余试用额度 · 真实扣款 ¥0':'剩余站内额度'):'此接入未提供个人额度';
 if(d.snapshot_stale||d.error)note(d.error||'后台数据更新延迟，下面显示的是历史快照。',true);else note('已检查：'+new Date().toLocaleTimeString()+' · 上游额度约每分钟主动查询');
 $('pool-buttons').replaceChildren(...d.pools.map(p=>{const b=el('button',p.label,p.id===d.selected_pool?'selected':'');b.disabled=d.active_requests>0||d.queued_requests>0;b.onclick=async()=>{b.disabled=true;try{await api('pool',{pool:p.id});note('号池已保存。请在 Codex 新建对话后继续。');await refresh()}catch(e){note(e.message,true)}finally{b.disabled=false}};return b}));
 $('accounts').replaceChildren(...d.accounts.map(a=>{const card=el('article',undefined,'panel');card.append(el('h2',a.label),el('p',`${a.status==='active'&&a.schedulable?'可调度':'暂不可调度'} · ${a.label} 专属账号`,'muted'));

@@ -83,3 +83,22 @@ def test_collector_queries_quota_without_model_calls_and_retains_failure_history
     assert not any('/quota/refresh' in p for _,p in calls)
     assert third['accounts'][0]['next_retry_at'] == now+360
     assert not any('/responses' in p or 'reset-quota' in p for _,p in calls)
+
+
+def test_trial_balance_is_read_from_the_matching_customer_profile(tmp_path):
+    config = dict(partner={}, accounts={}, groups={}, user_id=3, snapshot_path=str(tmp_path/'usage'))
+    profile = {'id': 3, 'balance': '-0.025', 'private_field': 'hidden'}
+    def panel(method, path, token=None, body=None):
+        if path == '/auth/login':
+            return {'access_token': 'customer'}
+        assert token == 'customer'
+        if path == '/auth/me':
+            return profile
+        return {'items': []}
+    def allowance():
+        return collect(config, panel, account_snapshot=[], billing={'status':'active','mode':'trial_budget'})['allowance']
+    assert allowance() == {'trial': True, 'remaining': '0'}
+    profile['balance'] = '199.97475206'
+    assert allowance()['remaining'] == '199.97475206'
+    profile['id'] = 4
+    assert allowance()['remaining'] is None

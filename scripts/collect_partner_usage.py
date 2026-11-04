@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Root-only timer: export a sanitized status file, never expose admin login to web worker."""
 import json
+from decimal import Decimal
 import os
 from pathlib import Path
 import sys
@@ -14,7 +15,7 @@ from tokenbot.usage_snapshot import account_view, record_view, quota_view, epoch
 from tokenbot.panel_session import login, invalidate
 
 
-def collect(config, panel_override=None, now_override=None, account_snapshot=None):
+def collect(config, panel_override=None, now_override=None, account_snapshot=None, billing=None):
     opener = urllib.request.build_opener(NoRedirect(), urllib.request.ProxyHandler({}))
     def panel(method, path, token=None, body=None):
         req = urllib.request.Request('http://127.0.0.1:8180/api/v1'+path, method=method,
@@ -67,7 +68,20 @@ def collect(config, panel_override=None, now_override=None, account_snapshot=Non
     end = time.strftime('%Y-%m-%d', time.gmtime(now))
     stats = panel('GET','/usage/stats?start_date=2000-01-01&end_date='+end+'&timezone=UTC',user)
     records = panel('GET','/usage?page=1&page_size=30',user)['items']
-    return {'generated_at': now, 'quota_refresh_interval_seconds': 60, 'accounts':accounts,
+    extra = {}
+    if billing and billing.get('status') == 'active':
+        trial = billing.get('mode') == 'trial_budget'
+        remaining = None
+        try:
+            profile = panel('GET', '/auth/me', user)
+            if type(config.get('user_id')) is int and profile.get('id') == config['user_id']:
+                balance = Decimal(str(profile['balance']))
+                if balance.is_finite():
+                    remaining = format(max(Decimal(0), balance), 'f')
+        except (KeyError, ValueError, ArithmeticError, OSError, RuntimeError):
+            pass
+        extra['allowance'] = {'trial': trial, 'remaining': remaining}
+    return {**extra, 'generated_at': now, 'quota_refresh_interval_seconds': 60, 'accounts':accounts,
             'totals':{k:stats.get(k) for k in ['total_requests','total_tokens','total_input_tokens','total_output_tokens','total_cache_read_tokens']},
             'records':[record_view(r,config['accounts'],config['groups']) for r in records]}
 
@@ -95,13 +109,15 @@ def main():
     print('Partner snapshot failed; continuing independent customers.' if failed else 'Sanitized partner usage snapshot updated.')
     # Each customer authenticates as its own non-admin upstream user. Never filter a
     # global usage dump client-side, and never query quota again for every customer.
+    registry_path = Path(sys.argv[1]).parent / 'clients.json'
+    clients = json.loads(registry_path.read_text())['clients'] if registry_path.exists() and config.get('customers_dir') else {}
     for file in sorted(Path(config['customers_dir']).glob('*.json')) if config.get('customers_dir') else []:
         customer=json.loads(file.read_text())
         if not customer.get('snapshot_path'):
             continue  # Incomplete provisioning recovery record.
         target=Path(customer['snapshot_path'])
         try:
-            snapshot=collect(customer,account_snapshot=data['accounts'])
+            snapshot=collect(customer,account_snapshot=data['accounts'],billing=clients.get(file.stem, {}).get('billing'))
         except Exception:
             failed=True
             try:snapshot=json.loads(target.read_text())

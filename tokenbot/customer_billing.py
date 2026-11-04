@@ -276,7 +276,7 @@ class CustomerBilling:
                         status='settled' if complete and row.get('actual_cost') is not None else 'needs_review')
             if item['multiplier'] == '0':
                 item['status'] = 'free_test'
-            elif trial and item['status'] == 'settled':
+            elif (trial or ('trial_through_id' in billing and row['id'] <= billing['trial_through_id'])) and item['status'] == 'settled':
                 item['status'] = 'trial_usage'
             items.append(item)
         orders = list(self.state(cid)['orders'].values())
@@ -288,6 +288,6 @@ class CustomerBilling:
             'status': 'trial_budget' if trial else 'active', 'currency': 'CNY' if trial else 'USD', 'multiplier': billing['multiplier'],
             'generated_at': time.time(), 'activated_at': billing['activated_at'],
             'balance_usd': money(profile['balance']), 'spent_usd': money(spent),
-            'credited_usd': money(sum((amount(o['credit_usd']) for o in orders if o['status']=='credited'), Decimal(0))),
+            'credited_usd': money(sum((amount(o['credit_usd']) for o in orders if o['status']=='credited' and (trial or o.get('kind') != 'trial_credit')), Decimal(0))),
             'items': items, 'page': records['page'], 'pages': records['pages'], 'total': records['total'],
             'orders': sorted(public_orders, key=lambda o: o['created_at'], reverse=True)}

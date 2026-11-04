@@ -110,11 +110,16 @@ function launch(home,args,explicit){
 }
 function displayUsage(d){
   const lines=[`TokenBots | pool: ${d.selected_pool}`,`Checked: ${new Date().toISOString()}`];
+  if(d.allowance){
+    const a=d.allowance;
+    const value=a.remaining==null||d.snapshot_stale||d.error?'待更新':(a.trial?'¥':'$')+a.remaining;
+    lines.push((a.trial?'剩余试用额度 ':'剩余站内额度 ')+value);
+  }
   for(const a of d.accounts||[]){lines.push(a.label);for(const w of a.windows||[]){
     const value=typeof w.remaining_percent==='number'?w.remaining_percent+'%':'unknown';
     lines.push(`  ${w.label}: ${value}${w.stale||a.snapshot_stale||d.snapshot_stale?' [stale]':''}; resets: ${w.resets_at||'unknown'}`);
   }}
-  lines.push('Shared upstream subscription limits; no platform spending cap does not mean unlimited upstream usage.');return lines.join('\n');
+  lines.push('Shared upstream subscription limits are listed separately.');return lines.join('\n');
 }
 async function probe(a){
   const r=await request(a,'/v1/responses',{model:'gpt-6.1-sol',stream:true,store:false,reasoning:{effort:'low'},instructions:'Reply with the exact answer only.',input:[{role:'user',content:'What is 17 + 25? Reply with 42 only.'}]},120000);

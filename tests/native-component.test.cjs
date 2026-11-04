@@ -42,3 +42,10 @@ test('compact menu hides account identifiers, timestamps and unavailable windows
   assert.match(text,/套餐余量/);assert.match(text,/55%/);
   for(const forbidden of ['账号 1','账号 2','上游','本次检查','刷新显示','2026-10','upstream internal detail','部分窗口','平台不设']) assert(!text.includes(forbidden),forbidden);
 });
+test('personal trial balance is shown ahead of shared quota, including exhaustion and stale data',()=>{
+ const status={accounts:[account('Pro',94)],selected_pool:'auto',allowance:{trial:true,remaining:'199.97475206'}};
+ const summary=()=>render(status).children[0].rightIcon.children;
+ assert.equal(summary(),'试用剩余 ¥199.97475206');
+ status.allowance.remaining='0';assert.equal(summary(),'试用剩余 ¥0.00');
+ status.error='stale';assert.equal(summary(),'余额待更新');
+});

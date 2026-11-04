@@ -35,7 +35,12 @@ function TokenBotsNativeUsage() {
   };
   const plan = a => a.label.split(' ·')[0];
   const accounts = (status?.accounts || []).filter(a => status.selected_pool === 'auto' || plan(a).toLowerCase() === status.selected_pool);
-  const summary = error || (!status ? '读取中…' : accounts.map(a => `${plan(a)} ${accountPercent(a)}`).join(' · ') || '待更新');
+  const allowance = status?.allowance;
+  const amount = allowance?.remaining;
+  const ownBalance = allowance && ((status.snapshot_stale || status.error || amount == null)
+    ? '余额待更新' : (allowance.trial ? '试用剩余 ¥' : '站内剩余 $') +
+      Number(amount).toLocaleString('zh-CN', {minimumFractionDigits: 2, maximumFractionDigits: 8}));
+  const summary = error || ownBalance || (!status ? '读取中…' : accounts.map(a => `${plan(a)} ${accountPercent(a)}`).join(' · ') || '待更新');
   const select = async pool => {
     if (busy) return;
     setBusy(true);
