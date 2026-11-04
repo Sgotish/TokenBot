@@ -26,7 +26,7 @@ def main():
         'description':'Temporary internal connectivity trial; not a commercial plan',
         'platform':'openai','rate_multiplier':1,'is_exclusive':True,
         'subscription_type':'standard','require_oauth_only':True,
-        'allow_image_generation':False,'allow_batch_image_generation':False})
+        'allow_image_generation':True,'allow_batch_image_generation':False})
     state['group_id']=group['id'];save()
     for a in accounts:
         old=a.get('group_ids') or [g['id'] for g in a.get('groups',[])]

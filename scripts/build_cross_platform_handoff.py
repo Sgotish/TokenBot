@@ -31,6 +31,7 @@ access = {'public_origin':origin,'base_url':base,'key':config['key'],'label':con
 with zipfile.ZipFile(output,'w',zipfile.ZIP_DEFLATED) as z:
     prefix='TokenBots-Cross-Platform/'
     z.write(bundle,prefix+'tokenbots.cjs')
+    z.write(ROOT/'integrations/windows-codex/native-menu/tokenbots-images.cjs',prefix+'native-menu/tokenbots-images.cjs')
     z.writestr(prefix+'access.json',json.dumps(access,ensure_ascii=False,indent=2))
     z.write(ROOT/'docs/cross-platform.md',prefix+'README.md')
     z.write(source/'node_modules/smol-toml/LICENSE',prefix+'THIRD-PARTY-LICENSE.txt')

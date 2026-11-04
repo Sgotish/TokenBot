@@ -69,6 +69,7 @@ try {
 } finally { $env:CODEX_HOME = $previousHome }
 if (-not (Test-Path -LiteralPath (Join-Path $nativeHome 'config.toml'))) { throw 'Dedicated configuration was not created.' }
 $null = [IO.File]::ReadAllText((Join-Path $nativeHome 'config.toml'))
+& (Join-Path $PSScriptRoot 'enable-images.ps1') -AppDirectory $appDir
 $escapedHome = $nativeHome.Replace("'", "''")
 $launch = @"
 `$ErrorActionPreference = 'Stop'

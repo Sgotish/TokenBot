@@ -62,9 +62,20 @@ async function configure({home,access,target,localTest=false}){
   let profile;try{profile=parse(before||'').profile;}catch{throw Error('Invalid existing TOML. Nothing changed.');}
   if(profile && (typeof profile!=='string'||profile==='..'||/[\\/]/.test(profile)))throw Error('Invalid profile filename. Nothing changed.');
   const activeProfile=profile?read(path.join(home,profile+'.config.toml')):undefined;
-  const next=mergeConfig(before,access,target,activeProfile);
+  let next=mergeConfig(before,access,target,activeProfile);
   const models=await(await request(access,'/v1/models')).json();
   if(!models.data?.some(m=>m.id===parse(next).model))throw Error('Model unavailable. Nothing changed.');
+  if(access.public_origin==='https://pilot.tokenbots.top'){
+    const name='tokenbots-images.cjs';
+    const source=[path.join(__dirname,'native-menu',name),path.join(__dirname,'../windows-codex/native-menu',name)].find(fs.existsSync);
+    if(!source)throw Error('Missing image tool in package. Extract the full TokenBots download.');
+    const content=fs.readFileSync(source,'utf8');
+    const helper=path.join(home,'.tokenbots-tools','images-'+hash(content).slice(0,16)+'.cjs');
+    if(read(helper)!==content)write(helper,content);
+    const config=parse(next);
+    config.mcp_servers||={};config.mcp_servers.tokenbots_images={command:process.execPath,args:[helper,af],tool_timeout_sec:240};
+    next=stringify(config);
+  }
   const na=JSON.stringify({...access,target},null,2)+'\n';
   const record={before,beforeAccess,installed:hash(next),installedAccess:hash(na),target,created:new Date().toISOString()};
   const backup=path.join(home,'.tokenbots-setup',Date.now()+'-'+crypto.randomUUID()+'.json');
