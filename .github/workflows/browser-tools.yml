@@ -1,0 +1,17 @@
+name: Windows browser tools acceptance
+on: workflow_dispatch
+jobs:
+  browser:
+    runs-on: windows-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: npm ci --ignore-scripts --omit=dev
+        working-directory: integrations/windows-codex/browser-tools
+      - run: node --test tests/browser-tools.test.cjs
+      - name: Windows PowerShell installer and actual Edge MCP click
+        shell: powershell
+        run: ./tests/windows-browser-install.ps1

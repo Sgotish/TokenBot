@@ -14,4 +14,5 @@ __pycache__/
 .venv/
 .DS_Store
 node_modules/
+.playwright-mcp/
 integrations/codex-client/dist/
