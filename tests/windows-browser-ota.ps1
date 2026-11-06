@@ -26,6 +26,14 @@ try {
     if ([IO.File]::ReadAllText($config) -ne $original) { throw 'Bootstrap changed customer config' }
     $ota = Join-Path $app 'tokenbots-ota'
     if (Test-Path (Join-Path $ota 'installed')) { throw 'Failed bootstrap was marked installed' }
+    & $node -e "if(typeof require(process.argv[1]).prepare!=='function')process.exit(1)" $updater
+    if ($LASTEXITCODE -ne 0) {
+        $diagnostic = Join-Path $app 'bootstrap-diagnostic'
+        New-Item -ItemType Directory -Path $diagnostic | Out-Null
+        & $node ./tests/windows-ota-prepare.cjs extract $release $diagnostic
+        & (Join-Path $diagnostic 'apply.ps1') -AppDirectory $app
+        throw 'Transport bootstrap did not install the new updater'
+    }
     Write-Host 'PASS: legacy updater bootstrapped transport, preserved original client config'
     # Real HTTPS asset download using the signed candidate before production feed changes.
     & $node ./tests/windows-ota-prepare.cjs $updater $ota $release

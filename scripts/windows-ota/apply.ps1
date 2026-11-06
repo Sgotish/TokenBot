@@ -4,7 +4,7 @@ $ErrorActionPreference = 'Stop'
 $updater = Join-Path $AppDirectory 'ota-client.cjs'
 $updaterTemp = $updater + '.new-' + [guid]::NewGuid().ToString('N')
 Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'ota-client.cjs') -Destination $updaterTemp
-if (Test-Path -LiteralPath $updater) { [IO.File]::Replace($updaterTemp,$updater,$null) }
+if (Test-Path -LiteralPath $updater) { [IO.File]::Replace($updaterTemp,$updater,$updater+'.previous') }
 else { Move-Item -LiteralPath $updaterTemp -Destination $updater }
 $asset = Get-Content -Raw -LiteralPath (Join-Path $PSScriptRoot 'browser-asset.json') | ConvertFrom-Json
 $cache = Join-Path $AppDirectory ('tokenbots-ota\assets\' + $asset.sha256 + '.zip')
