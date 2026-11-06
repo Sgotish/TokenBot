@@ -1,5 +1,12 @@
 name: Windows browser tools acceptance
-on: workflow_dispatch
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/browser-tools.yml'
+      - 'integrations/windows-codex/browser-tools/**'
+      - 'tests/browser-tools*'
+      - 'tests/windows-browser-install.ps1'
 jobs:
   browser:
     runs-on: windows-latest
