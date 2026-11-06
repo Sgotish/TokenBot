@@ -8,7 +8,7 @@ const timer=setTimeout(()=>{console.error('Browser acceptance timeout');child?.k
 async function main(){
  fs.mkdirSync(home,{recursive:true});
  if(!fs.existsSync(path.join(home,'config.toml')))fs.writeFileSync(path.join(home,'config.toml'),'model="gpt-6-astra"\n');
- install(home,process.execPath);
+ if(process.argv[3]!=='--installed')install(home,process.execPath);
  const cfg=require('../integrations/windows-codex/browser-tools/node_modules/@iarna/toml').parse(fs.readFileSync(path.join(home,'config.toml'),'utf8')).mcp_servers.tokenbots_browser;
  server=http.createServer((req,res)=>{res.setHeader('Content-Type','text/html; charset=utf-8');res.end('<title>TokenBots browser acceptance</title><h1>Ready</h1><button onclick="document.querySelector(\'h1\').textContent=\'Click verified\'">Verify click</button>');});
  await new Promise(r=>server.listen(0,'127.0.0.1',r));

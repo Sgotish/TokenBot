@@ -7,6 +7,10 @@ on:
       - 'integrations/windows-codex/browser-tools/**'
       - 'tests/browser-tools*'
       - 'tests/windows-browser-install.ps1'
+      - 'tests/windows-browser-ota.ps1'
+      - 'tests/windows-ota*'
+      - 'tests/fixtures/browser-ota*'
+      - 'integrations/windows-codex/native-menu/ota-client.cjs'
 jobs:
   browser:
     runs-on: windows-latest
@@ -19,6 +23,10 @@ jobs:
       - run: npm ci --ignore-scripts --omit=dev
         working-directory: integrations/windows-codex/browser-tools
       - run: node --test tests/browser-tools.test.cjs
+      - run: node --test tests/windows-ota.test.cjs
       - name: Windows PowerShell installer and actual Edge MCP click
         shell: powershell
         run: ./tests/windows-browser-install.ps1
+      - name: Legacy signed OTA, rollback, real HTTPS download and actual Edge
+        shell: powershell
+        run: ./tests/windows-browser-ota.ps1
