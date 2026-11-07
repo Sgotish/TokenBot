@@ -33,6 +33,7 @@ public static class TBDesktop {
  [StructLayout(LayoutKind.Sequential)] public struct KEYBDINPUT{public ushort vk,scan;public uint flags,time;public UIntPtr extra;}
  [StructLayout(LayoutKind.Sequential)] public struct MOUSEINPUT{public int dx,dy;public uint data,flags,time;public UIntPtr extra;}
  [DllImport("user32.dll",SetLastError=true)] public static extern uint SendInput(uint n,INPUT[] a,int size);
+ public static void Key(ushort[] keys){var a=new INPUT[keys.Length*2];for(int i=0;i<keys.Length;i++){a[i].type=1;a[i].u.k.vk=keys[i];a[a.Length-1-i]=a[i];a[a.Length-1-i].u.k.flags=2;}if(SendInput((uint)a.Length,a,Marshal.SizeOf(typeof(INPUT)))!=a.Length)throw new Exception("Windows rejected keyboard input");}
  public static void Type(string s){foreach(char c in s){var a=new INPUT[2];a[0].type=1;a[0].u.k.scan=c;a[0].u.k.flags=4;a[1]=a[0];a[1].u.k.flags=6;if(SendInput(2,a,Marshal.SizeOf(typeof(INPUT)))!=2)throw new Exception("Windows rejected input; check the foreground window and elevation");}}
 }
 '@
@@ -70,9 +71,16 @@ switch ($a.action) {
  }
  'type' {if ($null -eq $a.text){throw 'Text required'};[TBDesktop]::Type([string]$a.text);'{"ok":true}'}
  'key' {
-  $keys=@{'ENTER'='{ENTER}';'TAB'='{TAB}';'ESC'='{ESC}';'BACKSPACE'='{BACKSPACE}';'DELETE'='{DELETE}';'CTRL+A'='^a';'CTRL+C'='^c';'CTRL+V'='^v';'CTRL+L'='^l';'CTRL+S'='^s';'ALT+F4'='%{F4}';'LEFT'='{LEFT}';'RIGHT'='{RIGHT}';'UP'='{UP}';'DOWN'='{DOWN}';'HOME'='{HOME}';'END'='{END}';'PAGEUP'='{PGUP}';'PAGEDOWN'='{PGDN}'}
-  if (-not $keys.ContainsKey([string]$a.key)){throw 'Unsupported key'}
-  [Windows.Forms.SendKeys]::SendWait($keys[[string]$a.key]);'{"ok":true}'
+  $keys=@{'ENTER'=13;'TAB'=9;'ESC'=27;'ESCAPE'=27;'BACKSPACE'=8;'DELETE'=46;'CTRL'=17;'CONTROL'=17;'SHIFT'=16;'ALT'=18;'WIN'=91;'LEFT'=37;'RIGHT'=39;'UP'=38;'DOWN'=40;'HOME'=36;'END'=35;'PAGEUP'=33;'PAGEDOWN'=34;'SPACE'=32;'INSERT'=45}
+  $codes = @()
+  foreach($key in ([string]$a.key).ToUpperInvariant().Split('+')) {
+    if($keys.ContainsKey($key)){$codes += [ushort]$keys[$key]}
+    elseif($key -match '^[A-Z0-9]$'){$codes += [ushort][char]$key}
+    elseif($key -match '^F([1-9]|1[0-9]|2[0-4])$'){$codes += [ushort](111+[int]$Matches[1])}
+    else{throw 'Unknown key name. Use names such as CTRL+O, WIN+E or ENTER.'}
+  }
+  if($codes.Count -gt 6){throw 'Invalid keyboard chord'}
+  [TBDesktop]::Key([ushort[]]$codes);'{"ok":true}' 
  }
  'scroll' {if($null -eq $a.amount -or [Math]::Abs([int]$a.amount) -gt 20){throw 'Invalid scroll amount'};[TBDesktop]::mouse_event(2048,0,0,([int]$a.amount*120),[UIntPtr]::Zero);'{"ok":true}'}
  default {throw 'Unknown desktop action'}
