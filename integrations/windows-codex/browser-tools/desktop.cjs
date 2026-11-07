@@ -10,7 +10,7 @@ function invoke(args){
  if(process.platform!=='win32')return Promise.reject(Error('Requires an unlocked Windows desktop'));
  if(!actions.includes(args.action))return Promise.reject(Error('Unknown action'));
  return new Promise((resolve,reject)=>{
-  const child=spawn('powershell.exe',['-NoLogo','-NoProfile','-NonInteractive','-STA','-File',path.join(__dirname,'desktop.ps1')],{windowsHide:true,stdio:['pipe','pipe','pipe']});
+  const child=spawn('powershell.exe',['-NoLogo','-NoProfile','-NonInteractive','-STA','-File',path.join(__dirname,'desktop.ps1')],{windowsHide:true,env:{...process.env,TOKENBOTS_DESKTOP_REQUEST:Buffer.from(JSON.stringify(args)).toString('base64')},stdio:['ignore','pipe','pipe']});
   let output='',error='',settled=false;
   const timer=setTimeout(()=>{child.kill();done(Error('Desktop action timed out; observe before retrying. '+error.trim()));},20000);
   function done(err,value){if(settled)return;settled=true;clearTimeout(timer);err?reject(err):resolve(value);}
@@ -18,7 +18,7 @@ function invoke(args){
   child.stdout.on('data',s=>{output+=s;if(output.length>16*1024*1024){child.kill();done(Error('Desktop response too large'));}});
   child.stderr.on('data',s=>{error=(error+s).slice(-4000);});
   child.on('error',e=>done(e));child.on('close',code=>{try{if(code)throw Error(error||'Desktop action failed');const r=JSON.parse(output);if(r.error)throw Error(r.error);done(null,r);}catch(e){done(e);}});
-  child.stdin.on('error',()=>{});child.stdin.end(Buffer.from(JSON.stringify(args)).toString('base64')+'\n');
+
  });
 }
 const tool={name:'desktop',description:'Observe and operate the existing Windows desktop, apps and signed-in browser windows. Foreground control; observe first. It does not use the separate Playwright browser profile. Coordinates are original desktop pixels, including negative monitor origins. Read screenshot dimensions/scale before clicking. After an action observe its result. No automatic retries.',inputSchema:{type:'object',properties:{action:{type:'string',enum:actions},window:{type:'integer',description:'Window handle from observe'},x:{type:'integer'},y:{type:'integer'},button:{type:'string',enum:['left','right','double']},text:{type:'string'},key:{type:'string',enum:['ENTER','TAB','ESC','BACKSPACE','DELETE','CTRL+A','CTRL+C','CTRL+V','CTRL+L','CTRL+S','ALT+F4','LEFT','RIGHT','UP','DOWN','HOME','END','PAGEUP','PAGEDOWN']},amount:{type:'integer',minimum:-20,maximum:20}},required:['action'],additionalProperties:false}};

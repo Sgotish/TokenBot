@@ -3,7 +3,8 @@ $ErrorActionPreference = 'Stop'
 function Trace-Stage($stage) {if ($env:TOKENBOTS_DESKTOP_DEBUG -eq '1'){[Console]::Error.WriteLine($stage)}}
 try {
 Trace-Stage 'read-input'
-$a = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String([Console]::In.ReadLine())) | ConvertFrom-Json
+$a = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($env:TOKENBOTS_DESKTOP_REQUEST)) | ConvertFrom-Json
+$env:TOKENBOTS_DESKTOP_REQUEST = $null
 Trace-Stage 'assemblies'
 Add-Type -AssemblyName System.Windows.Forms
 Add-Type -AssemblyName System.Drawing

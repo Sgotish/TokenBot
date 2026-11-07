@@ -83,8 +83,6 @@ wire_api = "responses"
 experimental_bearer_token = "$tbKey"
 requires_openai_auth = false
 supports_websockets = false
-request_max_retries = 0
-stream_max_retries = 0
 stream_idle_timeout_ms = 300000
 
 [model_providers.tokenbots_partner_20261016.capabilities]

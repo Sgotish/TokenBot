@@ -9,8 +9,9 @@ const assert=require('node:assert/strict');
  const output=path.resolve('reports/windows-desktop-20261107');fs.mkdirSync(output,{recursive:true});
  fs.writeFileSync(fixture,`Add-Type -AssemblyName System.Windows.Forms\n$f=New-Object Windows.Forms.Form\n$f.Text='TokenBots Desktop Acceptance'\n$f.Width=650;$f.Height=300;$f.StartPosition='CenterScreen'\n$t=New-Object Windows.Forms.TextBox\n$t.Left=30;$t.Top=40;$t.Width=500\n$b=New-Object Windows.Forms.Button\n$b.Text='Verify';$b.Left=30;$b.Top=100;$b.Width=130\n$b.Add_Click({@{text=$t.Text;clicked=$true}|ConvertTo-Json|Set-Content -Encoding UTF8 -LiteralPath '${result.replace(/'/g,"''")}'})\n$f.Controls.Add($t);$f.Controls.Add($b);$f.TopMost=$true\n[void]$f.ShowDialog()\n`);
  const ui=spawn('powershell.exe',['-NoLogo','-NoProfile','-STA','-File',fixture],{windowsHide:true});
+ const deadline=setTimeout(()=>{console.error('Desktop test deadline');ui.kill();process.exit(1);},120000);
  const client=new Client({name:'desktop-acceptance',version:'1.0.0'});
- const transport=new StdioClientTransport({command:process.execPath,args:[path.resolve('integrations/windows-codex/browser-tools/desktop.cjs')],stderr:'pipe'});
+ const transport=new StdioClientTransport({command:process.execPath,args:[path.resolve('integrations/windows-codex/browser-tools/desktop.cjs')],env:{...process.env,TOKENBOTS_DESKTOP_DEBUG:'1'},stderr:'pipe'});
  async function call(a){const r=await client.callTool({name:'desktop',arguments:a});assert.ok(!r.isError,JSON.stringify(r));return r;}
  try{
  await client.connect(transport);assert.ok((await client.listTools()).tools.some(t=>t.name==='desktop'));
@@ -26,5 +27,6 @@ const assert=require('node:assert/strict');
  const observed=await call({action:'observe'}),img=observed.content.find(c=>c.type==='image');assert.ok(img);fs.writeFileSync(path.join(output,'desktop.png'),Buffer.from(img.data,'base64'));
  fs.writeFileSync(path.join(output,'result.json'),JSON.stringify({passed:true,windows:state.windows.length,unicodeTyping:true,click:true,keyboard:true,screenshot:true,customerDevice:false}));
  console.log('Actual Windows MCP enumerate/focus/click/Unicode typing/keyboard/screenshot passed');
- }finally{await client.close();ui.kill();}
-})().catch(e=>{console.error(e);process.exitCode=1;});
+ }finally{clearTimeout(deadline);ui.kill();await client.close();}
+ process.exit(0);
+})().catch(e=>{console.error(e);process.exit(1);});
