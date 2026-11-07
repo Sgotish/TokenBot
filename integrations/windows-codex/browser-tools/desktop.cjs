@@ -17,7 +17,7 @@ function invoke(args){
   child.stdout.setEncoding('utf8');child.stderr.setEncoding('utf8');
   child.stdout.on('data',s=>{output+=s;if(output.length>16*1024*1024){child.kill();done(Error('Desktop response too large'));}});
   child.stderr.on('data',s=>{error=(error+s).slice(-4000);});
-  child.on('error',e=>done(e));child.on('close',code=>{try{if(code)throw Error(error||'Desktop action failed');const r=JSON.parse(output);if(r.error)throw Error(r.error);done(null,r);}catch(e){done(e);}});
+  child.on('error',e=>done(e));child.on('close',code=>{try{const r=output.trim()?JSON.parse(output):{};if(r.error)throw Error(r.error);if(code)throw Error(error||'Desktop action failed');done(null,r);}catch(e){done(e);}});
 
  });
 }
