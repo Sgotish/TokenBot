@@ -49,6 +49,9 @@ function state(dir) {
   try { value = JSON.parse(fs.readFileSync(path.join(dir,'status.json'),'utf8')); } catch {}
   let receipt = {};
   try { receipt = JSON.parse(fs.readFileSync(path.join(dir,'receipt.json'),'utf8')); } catch {}
+  if (['checking','downloading'].includes(value.state) && (!value.lastAttemptAt || Date.now()-Date.parse(value.lastAttemptAt)>180000)) {
+    value={...value,state:'error',error:'上次更新操作已中断，请重新检查更新。'};
+  }
   return {...value, installedVersion:installed(dir), lastUpdatedAt:receipt.installedAt || null};
 }
 function saveState(dir, patch) {
@@ -161,7 +164,7 @@ async function main() {
   else if(mode==='fetch')await download(dir);
   else if(mode==='apply')applyLatest(dir,app,(script,target)=>{
     const ps=path.join(process.env.SystemRoot,'System32','WindowsPowerShell','v1.0','powershell.exe');
-    child.execFileSync(ps,['-NoProfile','-NonInteractive','-ExecutionPolicy','Bypass','-File',script,'-AppDirectory',target],{stdio:'ignore',windowsHide:true});
+    child.execFileSync(ps,['-NoProfile','-NonInteractive','-ExecutionPolicy','Bypass','-File',script,'-AppDirectory',target],{stdio:'inherit',windowsHide:true});
   });
   else throw Error('Unknown operation');
   });

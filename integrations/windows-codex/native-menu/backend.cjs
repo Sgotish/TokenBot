@@ -28,7 +28,7 @@ async function handle(request) {
           path.join(process.resourcesPath,'cua_node','bin','node.exe'),[updater,action,app],
           {windowsHide:true,timeout:150000,maxBuffer:4096},err=>err?reject(err):resolve()));
         return reply(ota.state(dir));
-      } catch { return reply({...ota.state(dir),error:'更新操作未完成，请稍后重试。'},503); }
+      } catch { const result=ota.state(dir); return reply({...result,error:result.error||'更新操作未完成，请稍后重试。'},503); }
     }
     const config = JSON.parse(fs.readFileSync(path.join(process.resourcesPath, 'tokenbots-native.json'), 'utf8'));
     const target = new URL(config.origin);

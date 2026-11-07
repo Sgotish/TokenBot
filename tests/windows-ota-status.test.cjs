@@ -28,6 +28,8 @@ test('manual check distinguishes new/latest/offline/rollback and installation ti
     await assert.rejects(ota.exclusive(dir,async()=>{}),/progress/);
   });
   assert(!fs.existsSync(path.join(dir,'operation.lock')));
+  fs.writeFileSync(path.join(dir,'status.json'),JSON.stringify({state:'downloading',lastAttemptAt:'2020-01-01T00:00:00Z'}));
+  assert.equal(ota.state(dir).state,'error','interrupted updater cannot leave button disabled forever');
  }finally{fs.rmSync(dir,{recursive:true,force:true});}
 });
 test('updater status is available without API credentials and cannot be called cross-origin',async()=>{
