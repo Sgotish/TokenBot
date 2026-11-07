@@ -1,9 +1,13 @@
 $ErrorActionPreference = 'Stop'
 [Console]::OutputEncoding = New-Object Text.UTF8Encoding($false)
+function Trace-Stage($stage) {if ($env:TOKENBOTS_DESKTOP_DEBUG -eq '1'){[Console]::Error.WriteLine($stage)}}
 try {
-$a = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String([Console]::In.ReadToEnd())) | ConvertFrom-Json
+Trace-Stage 'read-input'
+$a = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String([Console]::In.ReadLine())) | ConvertFrom-Json
+Trace-Stage 'assemblies'
 Add-Type -AssemblyName System.Windows.Forms
 Add-Type -AssemblyName System.Drawing
+Trace-Stage 'compile-native'
 Add-Type @'
 using System;
 using System.Text;
@@ -31,11 +35,13 @@ public static class TBDesktop {
  public static void Type(string s){foreach(char c in s){var a=new INPUT[2];a[0].type=1;a[0].u.k.scan=c;a[0].u.k.flags=4;a[1]=a[0];a[1].u.k.flags=6;if(SendInput(2,a,Marshal.SizeOf(typeof(INPUT)))!=2)throw new Exception("Windows rejected input; check the foreground window and elevation");}}
 }
 '@
+Trace-Stage 'native-ready'
 [void][TBDesktop]::SetProcessDPIAware()
 if (-not [Environment]::UserInteractive) { throw 'Windows desktop is not interactive. Unlock the user session.' }
 $bounds = [Windows.Forms.SystemInformation]::VirtualScreen
 switch ($a.action) {
  'observe' {
+  Trace-Stage 'capture'
   $bmp = New-Object Drawing.Bitmap($bounds.Width,$bounds.Height)
   $g = [Drawing.Graphics]::FromImage($bmp)
   try { $g.CopyFromScreen($bounds.Left,$bounds.Top,0,0,$bounds.Size) } finally { $g.Dispose() }
@@ -43,6 +49,7 @@ switch ($a.action) {
   $small = New-Object Drawing.Bitmap($bmp, (New-Object Drawing.Size([int]($bounds.Width*$scale),[int]($bounds.Height*$scale))))
   $stream = New-Object IO.MemoryStream
   try {$small.Save($stream,[Drawing.Imaging.ImageFormat]::Png);$png=[Convert]::ToBase64String($stream.ToArray())} finally {$stream.Dispose();$small.Dispose();$bmp.Dispose()}
+  Trace-Stage 'enumerate'
   @{windows=@([TBDesktop]::Windows());foreground=[TBDesktop]::GetForegroundWindow().ToInt64();screen=@{left=$bounds.Left;top=$bounds.Top;width=$bounds.Width;height=$bounds.Height;imageScale=$scale};png=$png} | ConvertTo-Json -Depth 8 -Compress
  }
  'focus' {

@@ -1,5 +1,6 @@
 const fs=require('node:fs'),path=require('node:path'),os=require('node:os');
 const {spawn}=require('node:child_process');
+process.env.TOKENBOTS_DESKTOP_DEBUG='1';
 const {Client}=require('../integrations/windows-codex/browser-tools/node_modules/@modelcontextprotocol/sdk/dist/cjs/client/index.js');
 const {StdioClientTransport}=require('../integrations/windows-codex/browser-tools/node_modules/@modelcontextprotocol/sdk/dist/cjs/client/stdio.js');
 const assert=require('node:assert/strict');
