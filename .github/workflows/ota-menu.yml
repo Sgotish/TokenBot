@@ -1,11 +1,19 @@
 name: Windows OTA menu acceptance
-on: workflow_dispatch
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/ota-menu.yml'
+      - 'tests/windows-ota-menu.ps1'
+      - 'tests/fixtures/menu-ota-*.json'
 jobs:
   menu:
     runs-on: windows-latest
     timeout-minutes: 18
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 3
       - uses: actions/setup-python@v5
         with:
           python-version: '3.13'

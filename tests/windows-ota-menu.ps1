@@ -5,7 +5,7 @@ $legacy=Join-Path $env:RUNNER_TEMP 'legacy-native'
 New-Item -ItemType Directory -Path $legacy | Out-Null
 Copy-Item integrations/windows-codex/native-menu/* $legacy
 foreach ($name in @('component.js','backend.cjs')) {
-    $content=git show "HEAD~1:integrations/windows-codex/native-menu/$name"
+    $content=git show "1fd0d4a:integrations/windows-codex/native-menu/$name"
     [IO.File]::WriteAllText((Join-Path $legacy $name),($content -join "`n"),(New-Object Text.UTF8Encoding($false)))
 }
 $output=@(& (Join-Path $legacy 'install.ps1') -PrepareOnly)
@@ -14,7 +14,7 @@ if (-not (Test-Path (Join-Path $app '.tokenbots-custom-copy'))) { throw 'No revi
 $env:CODEX_HOME=Join-Path $env:RUNNER_TEMP 'ota-menu-profile'
 New-Item -ItemType Directory -Force $env:CODEX_HOME | Out-Null
 $key='fixture-only-not-a-real-key'
-'{"origin":"http://127.0.0.1:18791","key":"fixture-only-not-a-real-key","testOnlyLocalOrigin":true}' | Set-Content -Encoding ASCII (Join-Path $app 'resources\tokenbots-native.json')
+'{"origin":"https://pilot.tokenbots.top","key":"fixture-only-not-a-real-key"}' | Set-Content -Encoding ASCII (Join-Path $app 'resources\tokenbots-native.json')
 @'
 model = "gpt-6.1-sol"
 model_provider = "tokenbots_test"
@@ -59,6 +59,7 @@ $server=Start-Process python -ArgumentList @('-m','http.server','18792','--bind'
 $updater=Join-Path $app 'ota-client.cjs'
 $originalUpdater=[IO.File]::ReadAllText($updater)
 [IO.File]::WriteAllText($updater,$originalUpdater.Replace('https://tokenbots.top/static/windows-ota-v1.json','http://127.0.0.1:18792/candidate.json'),(New-Object Text.UTF8Encoding($false)))
+'{"origin":"http://127.0.0.1:18791","key":"fixture-only-not-a-real-key","testOnlyLocalOrigin":true}' | Set-Content -Encoding ASCII (Join-Path $app 'resources\tokenbots-native.json')
 $fixture=Start-Process python -ArgumentList 'tests/native_fixture_server.py' -PassThru
 Start-Process (Join-Path $app 'ChatGPT.exe') -ArgumentList '--force-renderer-accessibility' -WorkingDirectory $app | Out-Null
 Start-Sleep -Seconds 30
