@@ -74,13 +74,13 @@ switch ($a.action) {
   $keys=@{'ENTER'=13;'TAB'=9;'ESC'=27;'ESCAPE'=27;'BACKSPACE'=8;'DELETE'=46;'CTRL'=17;'CONTROL'=17;'SHIFT'=16;'ALT'=18;'WIN'=91;'LEFT'=37;'RIGHT'=39;'UP'=38;'DOWN'=40;'HOME'=36;'END'=35;'PAGEUP'=33;'PAGEDOWN'=34;'SPACE'=32;'INSERT'=45}
   $codes = @()
   foreach($key in ([string]$a.key).ToUpperInvariant().Split('+')) {
-    if($keys.ContainsKey($key)){$codes += [ushort]$keys[$key]}
-    elseif($key -match '^[A-Z0-9]$'){$codes += [ushort][char]$key}
-    elseif($key -match '^F([1-9]|1[0-9]|2[0-4])$'){$codes += [ushort](111+[int]$Matches[1])}
+    if($keys.ContainsKey($key)){$codes += [System.UInt16]$keys[$key]}
+    elseif($key -match '^[A-Z0-9]$'){$codes += [System.UInt16][char]$key}
+    elseif($key -match '^F([1-9]|1[0-9]|2[0-4])$'){$codes += [System.UInt16](111+[int]$Matches[1])}
     else{throw 'Unknown key name. Use names such as CTRL+O, WIN+E or ENTER.'}
   }
   if($codes.Count -gt 6){throw 'Invalid keyboard chord'}
-  [TBDesktop]::Key([ushort[]]$codes);'{"ok":true}' 
+  [TBDesktop]::Key([System.UInt16[]]$codes);'{"ok":true}' 
  }
  'scroll' {if($null -eq $a.amount -or [Math]::Abs([int]$a.amount) -gt 20){throw 'Invalid scroll amount'};[TBDesktop]::mouse_event(2048,0,0,([int]$a.amount*120),[UIntPtr]::Zero);'{"ok":true}'}
  default {throw 'Unknown desktop action'}
