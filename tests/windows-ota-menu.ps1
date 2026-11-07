@@ -24,6 +24,10 @@ base_url = "http://127.0.0.1:18791/v1"
 wire_api = "responses"
 experimental_bearer_token = "fixture-only-not-a-real-key"
 requires_openai_auth = false
+[model_providers.tokenbots_partner_20261016]
+name = "TokenBots legacy fixture"
+request_max_retries = 0
+stream_max_retries = 0
 '@ | Set-Content -Encoding ASCII (Join-Path $env:CODEX_HOME 'config.toml')
 '{"OPENAI_API_KEY":"fixture-only-not-a-real-key"}' | Set-Content -Encoding ASCII (Join-Path $env:CODEX_HOME 'auth.json')
 '{"electron-persisted-atom-state":{"electron:onboarding-projectless-completed":true}}' | Set-Content -Encoding ASCII (Join-Path $env:CODEX_HOME '.codex-global-state.json')
@@ -31,15 +35,21 @@ $id=([BitConverter]::ToString([Security.Cryptography.SHA256]::Create().ComputeHa
 $privateProfile=Join-Path $env:USERPROFILE ('.tokenbots-native-homes\'+$id)
 New-Item -ItemType Directory -Force $privateProfile | Out-Null
 Copy-Item (Join-Path $env:CODEX_HOME 'config.toml') (Join-Path $privateProfile 'config.toml')
+foreach($name in @('tokenbots-browser-check','tokenbots-project-checkpoints')) {
+ $owned=Join-Path $privateProfile ('skills\'+$name)
+ New-Item -ItemType Directory -Force $owned | Out-Null
+ [IO.File]::WriteAllText((Join-Path $owned '.tokenbots-owned'),'synthetic')
+ [IO.File]::WriteAllText((Join-Path $owned 'SKILL.md'),'Old synthetic trial prompt')
+}
 $sentinel=Join-Path $privateProfile 'customer-project.txt'
 [IO.File]::WriteAllText($sentinel,'Keep customer project')
 [IO.File]::WriteAllText((Join-Path $app 'launch-tokenbots.ps1'),'Start-Process -FilePath (Join-Path $PSScriptRoot ''ChatGPT.exe'')')
 $package=Join-Path $env:RUNNER_TEMP 'repair-package'
 New-Item -ItemType Directory $package | Out-Null
 foreach($name in @('enable-ota.ps1','ota-client.cjs','update-existing.ps1')) { Copy-Item (Join-Path 'integrations/windows-codex/native-menu' $name) $package }
-Copy-Item tests/fixtures/menu-ota-2026110602.json (Join-Path $package 'ota-seed.json')
+Copy-Item tests/fixtures/menu-ota-2026110701.json (Join-Path $package 'ota-seed.json')
 $env:OTA_TEST_PACKAGE=$package
-& node ./tests/ota-candidate-asset.cjs tests/fixtures/menu-ota-2026110602.json (Join-Path $package 'browser-asset.json')
+& node ./tests/ota-candidate-asset.cjs tests/fixtures/menu-ota-2026110701.json (Join-Path $package 'browser-asset.json')
 if($LASTEXITCODE-ne 0){throw 'Candidate verification failed'}
 $asset=Get-Content -Raw (Join-Path $package 'browser-asset.json') | ConvertFrom-Json
 curl.exe --fail --silent --show-error --max-time 120 $asset.url -o (Join-Path $package 'browser-tools.zip')
@@ -48,13 +58,21 @@ if($LASTEXITCODE-ne 0){throw 'Runtime download failed'}
 & (Join-Path $package 'update-existing.ps1') -AppDirectory $app
 if([IO.File]::ReadAllText($sentinel)-ne 'Keep customer project'){throw 'Customer project changed'}
 $ota=Join-Path $app 'tokenbots-ota'
-if((Get-Content -Raw (Join-Path $ota 'installed')).Trim()-ne '2026110602'){throw 'Wrong installed version'}
+if((Get-Content -Raw (Join-Path $ota 'installed')).Trim()-ne '2026110701'){throw 'Wrong installed version'}
+$updatedConfig=Get-Content -Raw (Join-Path $privateProfile 'config.toml')
+if($updatedConfig -notmatch '\[mcp_servers.tokenbots_desktop\]'){throw 'Desktop MCP not registered'}
+if($updatedConfig -match '(request_max_retries|stream_max_retries)\s*=\s*0'){throw 'Trial retry override remains'}
+if($updatedConfig -notmatch 'remote_compaction\s*=\s*"v2"'){throw 'Compaction capability missing'}
+foreach($name in @('tokenbots-browser-check','tokenbots-project-checkpoints')) {
+ if(Test-Path (Join-Path $privateProfile ('skills\'+$name))){throw 'Owned trial skill remains'}
+}
+Write-Host 'PASS: desktop tool registered, owned trial skills/retry overrides retired, compaction enabled'
 $exeHash=(Get-FileHash (Join-Path $app 'ChatGPT.exe')).Hash
 & (Join-Path $package 'update-existing.ps1') -AppDirectory $app
 if((Get-FileHash (Join-Path $app 'ChatGPT.exe')).Hash-ne $exeHash){throw 'Repeated repair changed installed binary'}
 Write-Host 'PASS: real reviewed client overwritten, signed asset verified, repeat repair idempotent, customer project preserved'
 # Serve the signed candidate only to this disposable runner. No production feed switch.
-Copy-Item tests/fixtures/menu-ota-2026110602.json (Join-Path $env:RUNNER_TEMP 'candidate.json')
+Copy-Item tests/fixtures/menu-ota-2026110701.json (Join-Path $env:RUNNER_TEMP 'candidate.json')
 $server=Start-Process python -ArgumentList @('-m','http.server','18792','--bind','127.0.0.1','--directory',('"'+$env:RUNNER_TEMP+'"')) -PassThru
 $updater=Join-Path $app 'ota-client.cjs'
 $originalUpdater=[IO.File]::ReadAllText($updater)
