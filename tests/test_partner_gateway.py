@@ -355,3 +355,18 @@ def test_broken_upstream_stream_is_recorded_without_retry_and_releases_slot(tmp_
     assert len(calls)==2
     events=recent_failures(cfg)
     assert len(events)==2 and all(x['error_code']=='upstream_stream_interrupted' and not x['not_forwarded'] for x in events)
+
+
+def test_streaming_metadata_matches_json_decoder_without_dotted_key_confusion():
+    import io
+    from tokenbot.partner_gateway import request_selection
+    for payload in [
+        {'model':MODEL,'reasoning':{'effort':'low'},'reasoning.effort':'high','input':[{'model':'wrong'}]},
+        {'model':MODEL,'reasoning':[]}, {'model':MODEL,'reasoning':None},
+        {'model':[],'reasoning_effort':{'effort':'low'}},
+    ]:
+        expected={k:v for k,v in payload.items() if k in ('model','reasoning','reasoning_effort')}
+        if isinstance(expected.get('reasoning_effort'),dict):expected['reasoning_effort']=[]
+        assert request_selection(io.BytesIO(json.dumps(payload).encode()))==expected
+    raw=b'{"model":"wrong","model":"gpt-6.1-sol","reasoning":{"effort":"high"},"reasoning":{"effort":"low"}}'
+    assert request_selection(io.BytesIO(raw))==json.loads(raw)

@@ -59,20 +59,36 @@ class BufferedRequestLimit:
 def request_selection(stream):
     """Validate streaming JSON; preserve last-key semantics of the former JSON decoder."""
     selected = {}
+    depth = 0
+    root_key = reasoning_key = None
     first = True
-    for prefix, event, value in ijson.parse(stream):
+    for event, value in ijson.basic_parse(stream):
         if first:
-            if prefix != '' or event != 'start_map':
+            if event != 'start_map':
                 raise ValueError('Expected object')
             first = False
-        if prefix in ('model', 'reasoning_effort') and event not in ('map_key', 'end_map', 'end_array'):
-            selected[prefix] = value if event not in ('start_map', 'start_array') else []
-        elif prefix == 'reasoning' and event not in ('map_key', 'end_map', 'end_array'):
-            selected['reasoning'] = {} if event == 'start_map' else value if event != 'start_array' else []
-        elif prefix == 'reasoning.effort' and event not in ('map_key', 'end_map', 'end_array'):
-            if isinstance(selected.get('reasoning'), dict):
-                selected['reasoning']['effort'] = value if event not in ('start_map', 'start_array') else []
+        if event == 'map_key':
+            if depth == 1:
+                root_key = value
+                reasoning_key = None
+            elif depth == 2 and root_key == 'reasoning':
+                reasoning_key = value
+        elif event not in ('end_map', 'end_array'):
+            scalar = value if event not in ('start_map', 'start_array') else []
+            if depth == 1:
+                if root_key in ('model', 'reasoning_effort'):
+                    selected[root_key] = scalar
+                elif root_key == 'reasoning':
+                    selected['reasoning'] = {} if event == 'start_map' else scalar
+            elif depth == 2 and root_key == 'reasoning' and reasoning_key == 'effort':
+                if isinstance(selected.get('reasoning'), dict):
+                    selected['reasoning']['effort'] = scalar
+        if event in ('start_map', 'start_array'):
+            depth += 1
+        elif event in ('end_map', 'end_array'):
+            depth -= 1
     return selected
+
 
 
 def create_app(config, transport=None):
