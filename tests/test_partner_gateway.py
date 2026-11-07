@@ -6,7 +6,9 @@ from fastapi.testclient import TestClient
 from tokenbot.partner_gateway import create_app, MODEL, MAX_REQUEST_BYTES
 
 
-def test_gateway_limits_auth_paths_and_preserves_stream():
+def test_gateway_limits_auth_paths_and_preserves_stream(monkeypatch):
+    monkeypatch.setattr("tokenbot.partner_gateway.MAX_REQUEST_BYTES", 1024*1024)
+    monkeypatch.setitem(globals(), "MAX_REQUEST_BYTES", 1024*1024)
     calls = []
     def upstream(request):
         calls.append(request)
@@ -19,7 +21,8 @@ def test_gateway_limits_auth_paths_and_preserves_stream():
             assert c.get(path).status_code == 404
         assert c.get('/v1/models').json()['data'][0]['id'] == MODEL
         assert c.post('/v1/responses',json={'model':'other'}).status_code == 400
-        assert c.post('/v1/responses',json={'model':MODEL,'background':True}).status_code == 400
+        assert c.post('/v1/responses',json={'model':MODEL,'background':True,'service_tier':'priority'}).status_code == 200
+        calls.clear()
         assert c.post('/v1/responses',content=b'x'*(MAX_REQUEST_BYTES+1)).status_code == 413
         r=c.post('/v1/responses',json={'model':MODEL,'input':'hi','stream':True})
         assert r.status_code==200 and r.content==b'data: {"test":"synthetic"}\n\n'
@@ -259,7 +262,9 @@ def test_portal_security_middleware_preserves_queued_http_disconnect(tmp_path):
     asyncio.run(scenario())
 
 
-def test_large_plain_and_zstd_bodies_preserved_and_limits_recorded(tmp_path):
+def test_large_plain_and_zstd_bodies_preserved_and_limits_recorded(tmp_path, monkeypatch):
+    monkeypatch.setattr("tokenbot.partner_gateway.MAX_REQUEST_BYTES", 20*1024*1024)
+    monkeypatch.setitem(globals(), "MAX_REQUEST_BYTES", 20*1024*1024)
     from tokenbot.gateway_events import recent_failures
     cfg={'expires_at':None,'allowed_ips':['testclient'],'key':'synthetic',
          'selection_path':str(tmp_path/'selection.json')}
@@ -278,7 +283,7 @@ def test_large_plain_and_zstd_bodies_preserved_and_limits_recorded(tmp_path):
             assert calls[-1]==large
         for encoding,body in [('identity',large+b' '),('zstd',zstandard.ZstdCompressor().compress(large+b' '))]:
             r=c.post('/v1/responses',content=body,headers={'content-encoding':encoding})
-            assert r.status_code==413 and '16 MiB' in r.json()['error']['message']
+            assert r.status_code==413 and '256 MiB' in r.json()['error']['message']
             assert r.headers['x-tokenbot-error-source']=='request_body_too_large'
             event=recent_failures(cfg)[0]
             assert event['request_id']==r.headers['x-request-id'] and event['not_forwarded']
@@ -286,7 +291,7 @@ def test_large_plain_and_zstd_bodies_preserved_and_limits_recorded(tmp_path):
         assert len(calls)==2
         # Chunked uploads cannot bypass the bound, and a failed request does not leak a slot.
         def chunks():
-            for _ in range(17):yield b' '*1024*1024
+            for _ in range(MAX_REQUEST_BYTES//(1024*1024)+1):yield b' '*1024*1024
         assert c.post('/v1/responses',content=chunks()).status_code==413
         assert c.post('/v1/responses',content=payload).status_code==200
 

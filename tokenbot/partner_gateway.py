@@ -3,7 +3,8 @@ import asyncio
 import hmac
 import hashlib
 import json
-import io
+import tempfile
+import ijson
 import os
 import time
 import logging
@@ -24,7 +25,7 @@ from tokenbot.gateway_events import record_failure
 
 ROOT = Path(__file__).resolve().parents[1]
 MODEL = 'gpt-6.1-sol'
-MAX_REQUEST_BYTES = 16 * 1024 * 1024
+MAX_REQUEST_BYTES = 256 * 1024 * 1024  # Match the deployed upstream ingress envelope.
 MAX_BUFFERED_REQUESTS = 4
 
 
@@ -45,10 +46,33 @@ class BufferedRequestLimit:
                                     headers={'Retry-After': '5', 'X-TokenBot-Error-Source': 'bridge_capacity'})
             return await response(scope, receive, send)
         self.active += 1
+        scope['tokenbot_request_files'] = []
         try:
             await self.app(scope, receive, send)
         finally:
+            for file in scope['tokenbot_request_files']:
+                file.close()
             self.active -= 1
+
+
+
+def request_selection(stream):
+    """Validate streaming JSON; preserve last-key semantics of the former JSON decoder."""
+    selected = {}
+    first = True
+    for prefix, event, value in ijson.parse(stream):
+        if first:
+            if prefix != '' or event != 'start_map':
+                raise ValueError('Expected object')
+            first = False
+        if prefix in ('model', 'reasoning_effort') and event not in ('map_key', 'end_map', 'end_array'):
+            selected[prefix] = value if event not in ('start_map', 'start_array') else []
+        elif prefix == 'reasoning' and event not in ('map_key', 'end_map', 'end_array'):
+            selected['reasoning'] = {} if event == 'start_map' else value if event != 'start_array' else []
+        elif prefix == 'reasoning.effort' and event not in ('map_key', 'end_map', 'end_array'):
+            if isinstance(selected.get('reasoning'), dict):
+                selected['reasoning']['effort'] = value if event not in ('start_map', 'start_array') else []
+    return selected
 
 
 def create_app(config, transport=None):
@@ -108,36 +132,47 @@ def create_app(config, transport=None):
                 and set(request.query_params) == {'client_version'})) or (request.method, path) not in {
                 ('GET', 'v1/models'), ('POST', 'v1/responses'), ('POST', 'v1/chat/completions')}:
             return error('Endpoint not available in this test', 404)
-        body = b''
+        body = None
+        body_size = 0
         if request.method == 'POST':
             try:
-                with io.BytesIO() as buffer:
-                    async with asyncio.timeout(60):
-                        async for chunk in request.stream():
-                            if buffer.tell() + len(chunk) > MAX_REQUEST_BYTES:
-                                return failed('Request exceeds 16 MiB; compact the conversation or reduce attachments before retrying',
-                                              413, 'request_body_too_large')
-                            buffer.write(chunk)
-                    body = buffer.getvalue()
+                # Anonymous, private files are removed even on cancellation/errors.
+                # Queued and streaming requests no longer retain whole conversations in RAM.
+                body = tempfile.TemporaryFile()
+                request.scope['tokenbot_request_files'].append(body)
+                async with asyncio.timeout(60):
+                    async for chunk in request.stream():
+                        if body.tell() + len(chunk) > MAX_REQUEST_BYTES:
+                            return failed('Request exceeds upstream 256 MiB envelope; compact the conversation or reduce attachments',
+                                          413, 'request_body_too_large')
+                        body.write(chunk)
+                chunk = None
+                body.seek(0)
                 encoding = request.headers.get('content-encoding', 'identity').lower()
                 if encoding == 'zstd':
-                    with zstandard.ZstdDecompressor(max_window_size=16384).stream_reader(io.BytesIO(body)) as reader:
-                        body = reader.read(MAX_REQUEST_BYTES + 1)
-                    if len(body) > MAX_REQUEST_BYTES:
-                        return failed('Decompressed request exceeds 16 MiB; compact the conversation or reduce attachments before retrying',
-                                      413, 'request_body_too_large')
+                    decoded = tempfile.TemporaryFile()
+                    request.scope['tokenbot_request_files'].append(decoded)
+                    with zstandard.ZstdDecompressor(max_window_size=256 * 1024 * 1024).stream_reader(body, closefd=False) as reader:
+                        while chunk := reader.read(65536):
+                            if decoded.tell() + len(chunk) > MAX_REQUEST_BYTES:
+                                return failed('Decompressed request exceeds upstream 256 MiB envelope; compact the conversation or reduce attachments',
+                                              413, 'request_body_too_large')
+                            decoded.write(chunk)
+                    body.close()
+                    body = decoded
                 elif encoding != 'identity':
                     return error('Unsupported request encoding', 415)
-                data = json.loads(body)
+                body_size = body.seek(0, 2)
+                body.seek(0)
+                # Parse the complete JSON, but retain only routing metadata, not image/history arrays.
+                data = request_selection(body)
                 selection_error = validate_selection(data)
                 if selection_error:
                     return error(selection_error, 400)
                 model = data.get('model')
-                if data.get('background') or data.get('service_tier') not in (None, 'auto', 'default'):
-                    return error('Background and priority requests are disabled', 400)
-                # Retain only the wire body while queued/streaming, not the parsed conversation too.
                 del data
-            except (ValueError, UnicodeError, TimeoutError, zstandard.ZstdError):
+                body.seek(0)
+            except (ValueError, UnicodeError, TimeoutError, zstandard.ZstdError, ijson.JSONError):
                 return error('Invalid request', 400)
         if request.method == 'GET':
             return discovery()
@@ -224,8 +259,12 @@ def create_app(config, transport=None):
                 for name in ('session_id', 'conversation_id'):
                     if name in request_headers:
                         request_headers[name] = hashlib.sha256((client_id+':'+request_headers[name]).encode()).hexdigest()
-            request_headers.update({'Authorization': 'Bearer ' + upstream_key, 'Content-Type': 'application/json'})
-            upstream = await client.send(client.build_request('POST', '/' + path, content=body,
+            request_headers.update({'Authorization': 'Bearer ' + upstream_key, 'Content-Type': 'application/json',
+                                    'Content-Length': str(body_size)})
+            async def body_chunks():
+                while chunk := body.read(65536):
+                    yield chunk
+            upstream = await client.send(client.build_request('POST', '/' + path, content=body_chunks(),
                 headers=request_headers), stream=True)
             if 300 <= upstream.status_code < 400:
                 await upstream.aclose()

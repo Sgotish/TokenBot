@@ -18,8 +18,9 @@ NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=strict
 ProtectHome=true
-# Four buffered API requests at most, each bounded to 16 MiB including decompression.
-MemoryMax=256M
+# Four private disk-spooled requests; ingress matches upstream 256 MiB.
+# JSON parsing retains routing metadata and at most the current scalar.
+MemoryMax=768M
 
 [Install]
 WantedBy=multi-user.target

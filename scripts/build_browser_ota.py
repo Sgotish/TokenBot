@@ -8,7 +8,7 @@ out.mkdir(exist_ok=True, parents=True)
 archive = out / 'runtime.zip'
 with zipfile.ZipFile(archive, 'w', zipfile.ZIP_DEFLATED) as z:
     for file in sorted(source.rglob('*')):
-        if file.is_file() and not file.is_symlink() and '.bin' not in file.parts:
+        if file.is_file() and not file.is_symlink() and '.bin' not in file.parts and 'skills' not in file.relative_to(source).parts:
             # Stable bytes across builds. Only runtime files, no customer readme/data.
             info = zipfile.ZipInfo(file.relative_to(source).as_posix(), (2026,11,6,0,0,0))
             info.compress_type = zipfile.ZIP_DEFLATED
