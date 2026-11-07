@@ -157,6 +157,7 @@ async function main() {
   await exclusive(dir,async()=>{
   if(mode==='check')await check(dir);
   else if(mode==='stage')stage(dir,fs.readFileSync(input));
+  else if(mode==='prepare')await prepare(dir,fs.readFileSync(input));
   else if(mode==='fetch')await download(dir);
   else if(mode==='apply')applyLatest(dir,app,(script,target)=>{
     const ps=path.join(process.env.SystemRoot,'System32','WindowsPowerShell','v1.0','powershell.exe');

@@ -39,7 +39,7 @@ New-Item -ItemType Directory $package | Out-Null
 foreach($name in @('enable-ota.ps1','ota-client.cjs','update-existing.ps1')) { Copy-Item (Join-Path 'integrations/windows-codex/native-menu' $name) $package }
 Copy-Item tests/fixtures/menu-ota-2026110602.json (Join-Path $package 'ota-seed.json')
 $env:OTA_TEST_PACKAGE=$package
-node -e 'const fs=require("fs"),path=require("path"),o=require("./integrations/windows-codex/native-menu/ota-client.cjs"),r=o.verify(fs.readFileSync("tests/fixtures/menu-ota-2026110602.json"));fs.writeFileSync(path.join(process.env.OTA_TEST_PACKAGE,"browser-asset.json"),JSON.stringify(r.assets[0]));'
+& node ./tests/ota-candidate-asset.cjs tests/fixtures/menu-ota-2026110602.json (Join-Path $package 'browser-asset.json')
 if($LASTEXITCODE-ne 0){throw 'Candidate verification failed'}
 $asset=Get-Content -Raw (Join-Path $package 'browser-asset.json') | ConvertFrom-Json
 curl.exe --fail --silent --show-error --max-time 120 $asset.url -o (Join-Path $package 'browser-tools.zip')

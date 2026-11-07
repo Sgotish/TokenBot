@@ -14,7 +14,7 @@ $asset = [IO.File]::ReadAllText((Join-Path $PSScriptRoot 'browser-asset.json')) 
 $cache = Join-Path $ota 'assets'
 New-Item -ItemType Directory -Force -Path $cache | Out-Null
 Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'browser-tools.zip') -Destination (Join-Path $cache ($asset.sha256+'.zip')) -Force
-& $node -e 'const fs=require("fs"),path=require("path"),o=require(process.argv[1]);o.exclusive(process.argv[2],()=>o.prepare(process.argv[2],fs.readFileSync(process.argv[3]))).catch(()=>{process.exitCode=1})' $updater $ota (Join-Path $PSScriptRoot 'ota-seed.json')
+& $node $updater prepare $app (Join-Path $PSScriptRoot 'ota-seed.json')
 if ($LASTEXITCODE -ne 0) { throw 'Update verification failed. Existing client has not been replaced.' }
 & $node $updater apply $app
 if ($LASTEXITCODE -ne 0) { throw 'Update installation failed. Please send us the error text, without your API key.' }
