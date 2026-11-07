@@ -27,6 +27,7 @@ for ($i=0; $i -lt $paths.Count; $i++) {
 try {
     & (Join-Path $unpacked 'enable-browser.ps1') -AppDirectory $AppDirectory
     & (Join-Path $PSScriptRoot 'enable-images.ps1') -AppDirectory $AppDirectory
+    & (Join-Path $PSScriptRoot 'update-native.ps1') -AppDirectory $AppDirectory
 } catch {
     for ($i=0; $i -lt $paths.Count; $i++) {
         if (Test-Path -LiteralPath $paths[$i]) { Remove-Item -LiteralPath $paths[$i] -Recurse -Force }

@@ -44,6 +44,51 @@ function installed(dir) {
   if (!Number.isSafeInteger(n) || n<1) throw Error('Invalid installed version');
   return n;
 }
+function state(dir) {
+  let value = {};
+  try { value = JSON.parse(fs.readFileSync(path.join(dir,'status.json'),'utf8')); } catch {}
+  let receipt = {};
+  try { receipt = JSON.parse(fs.readFileSync(path.join(dir,'receipt.json'),'utf8')); } catch {}
+  return {...value, installedVersion:installed(dir), lastUpdatedAt:receipt.installedAt || null};
+}
+function saveState(dir, patch) {
+  const value={...state(dir),...patch};
+  atomic(path.join(dir,'status.json'),JSON.stringify(value));
+  return state(dir);
+}
+async function exclusive(dir, action) {
+  const lock=path.join(dir,'operation.lock');
+  let fd;
+  try { fd=fs.openSync(lock,'wx'); }
+  catch(e) {
+    if(e.code!=='EEXIST')throw e;
+    const pid=Number(fs.readFileSync(lock,'utf8'));
+    // An empty lock may be in the process of being created. Never steal it.
+    if(!Number.isInteger(pid)||pid<1)throw Error('Update already in progress');
+    try { process.kill(pid,0); throw Error('Update already in progress'); }
+    catch(err) { if(err.code!=='ESRCH')throw err; }
+    fs.unlinkSync(lock); fd=fs.openSync(lock,'wx');
+  }
+  fs.writeFileSync(fd,String(process.pid));
+  try { return await action(); }
+  finally { fs.closeSync(fd); fs.rmSync(lock,{force:true}); }
+}
+async function check(dir,key,fetcher=fetch) {
+  saveState(dir,{state:'checking',error:null,lastAttemptAt:new Date().toISOString()});
+  try {
+    const bytes=await readDownload(ENDPOINT,MAX,12000,fetcher);
+    const r=verify(bytes,key);
+    // A stale/rolled-back server feed must not claim that this device is latest.
+    if(r.version<installed(dir))throw Error('Update feed is older than this installation');
+    atomic(path.join(dir,'checked.json'),bytes);
+    const ready=fs.existsSync(path.join(dir,'release-'+r.version+'.json')) &&
+      (r.assets||[]).every(a=>assetValid(dir,a));
+    return saveState(dir,{state:r.version===installed(dir)?'latest':ready?'ready':'available',
+      latestVersion:r.version,lastCheckedAt:new Date().toISOString(),error:null});
+  } catch(e) {
+    saveState(dir,{state:'error',error:'检查失败，请检查网络后重试；尚未确认最新版本。'}); throw e;
+  }
+}
 function stage(dir, bytes, key) {
   const r=verify(bytes,key);
   if (r.version<=installed(dir)) return;
@@ -75,10 +120,16 @@ async function prepare(dir,bytes,key,fetcher=fetch){
     fs.mkdirSync(path.join(dir,'assets'),{recursive:true});atomic(assetPath(dir,a),data);
   }
   stage(dir,bytes,key);
-  atomic(path.join(dir,'status.json'),JSON.stringify({state:'ready',version:r.version}));
+  saveState(dir,{state:'ready',version:r.version,latestVersion:r.version,error:null});
 }
-async function download(dir) {
-  await prepare(dir,await readDownload(ENDPOINT,MAX,12000));
+async function download(dir,key,fetcher=fetch) {
+  const result=await check(dir,key,fetcher);
+  if(result.state==='latest')return result;
+  saveState(dir,{state:'downloading',error:null});
+  try {
+    await prepare(dir,fs.readFileSync(path.join(dir,'checked.json')),key,fetcher);
+    return state(dir);
+  } catch(e) { saveState(dir,{state:'error',error:'下载或校验失败，当前版本未改变，请重试。'}); throw e; }
 }
 function applyLatest(dir, app, run, key) {
   const candidates=fs.readdirSync(dir).map(n=>/^release-(\d+)\.json$/.exec(n)).filter(Boolean)
@@ -92,22 +143,27 @@ function applyLatest(dir, app, run, key) {
     for(const f of r.files)fs.writeFileSync(path.join(temp,f.name),Buffer.from(f.data,'base64'),{flag:'wx'});
     run(path.join(temp,'apply.ps1'),app);
     atomic(path.join(dir,'installed'),String(version));
-    atomic(path.join(dir,'status.json'),JSON.stringify({state:'installed',version}));
+    atomic(path.join(dir,'receipt.json'),JSON.stringify({version,installedAt:new Date().toISOString()}));
+    saveState(dir,{state:'installed',version,error:null});
     for(const old of fs.readdirSync(dir).filter(n=>/^release-\d+\.json$/.test(n)&&Number(n.slice(8,-5))<=version))fs.rmSync(path.join(dir,old),{force:true});
-  } finally {fs.rmSync(temp,{recursive:true,force:true});}
+  } catch(e) { saveState(dir,{state:'error',error:'更新安装失败，已保留原版本，请重试或联系客服。'}); throw e; }
+  finally {fs.rmSync(temp,{recursive:true,force:true});}
 }
 async function main() {
   const [mode,app,input]=process.argv.slice(2);
   if(!path.isAbsolute(app)||!fs.existsSync(path.join(app,'.tokenbots-custom-copy')))throw Error('Unknown installation');
   const dir=path.join(app,'tokenbots-ota');
   fs.mkdirSync(dir,{recursive:true});
-  if(mode==='stage')stage(dir,fs.readFileSync(input));
+  await exclusive(dir,async()=>{
+  if(mode==='check')await check(dir);
+  else if(mode==='stage')stage(dir,fs.readFileSync(input));
   else if(mode==='fetch')await download(dir);
   else if(mode==='apply')applyLatest(dir,app,(script,target)=>{
     const ps=path.join(process.env.SystemRoot,'System32','WindowsPowerShell','v1.0','powershell.exe');
     child.execFileSync(ps,['-NoProfile','-NonInteractive','-ExecutionPolicy','Bypass','-File',script,'-AppDirectory',target],{stdio:'ignore',windowsHide:true});
   });
   else throw Error('Unknown operation');
+  });
 }
-module.exports={stage,applyLatest,verify,prepare,download,assetValid};
+module.exports={stage,applyLatest,verify,prepare,download,assetValid,state,check,exclusive};
 if(require.main===module)main().catch(()=>{process.exitCode=1;});

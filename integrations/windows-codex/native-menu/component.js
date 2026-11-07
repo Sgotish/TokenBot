@@ -81,5 +81,50 @@ function TokenBotsNativeUsage() {
         ]}, account.label)),
       ],
     }) : null,
+    $.jsx(TokenBotsNativeUpdate, {}),
+  ]});
+}
+
+function TokenBotsNativeUpdate() {
+  const [open,setOpen]=ma.useState(false);
+  const [info,setInfo]=ma.useState(null);
+  const [busy,setBusy]=ma.useState(false);
+  const [error,setError]=ma.useState('');
+  ma.useEffect(()=>{
+    let live=true;
+    const refresh=async()=>{try{
+      const r=await fetch('app://-/tokenbots-native/update',{cache:'no-store'});
+      if(!r.ok)throw Error(); const value=await r.json();
+      if(live)setInfo(value);
+    }catch{if(live)setError('无法读取更新状态，请重试。');}};
+    refresh(); const timer=setInterval(refresh,3000);
+    return()=>{live=false;clearInterval(timer);};
+  },[]);
+  const act=async action=>{
+    if(busy)return; setBusy(true);setError('');setOpen(true);
+    setInfo(old=>({...old,state:action==='check'?'checking':'downloading'}));
+    try{
+      const r=await fetch('app://-/tokenbots-native/update/'+action,{method:'POST'});
+      const value=await r.json();setInfo(value);
+      if(!r.ok)throw Error(value.error||'操作未完成，请重试。');
+    }catch(e){setError(e.message||'网络异常，请重试。');}
+    finally{setBusy(false);}
+  };
+  const working=busy||['checking','downloading'].includes(info?.state);
+  const labels={latest:'已经检查过，是最新版本',available:'发现新版本',ready:'更新已下载，等待重启安装',installed:'更新已安装，请检查最新版本',checking:'正在检查更新…',downloading:'正在下载并校验更新…',error:'更新未完成，请重试'};
+  const when=value=>value?new Date(value).toLocaleString():'尚无记录';
+  return $.jsxs($.Fragment,{children:[
+    $.jsx(O,{onClick:e=>{e?.preventDefault?.();act('check');},children:'检查更新'}),
+    open?$.jsxs('div',{'data-tokenbots-update':true,role:'status',style:{padding:'8px 12px',minWidth:260,fontSize:12,lineHeight:1.8},onClick:e=>e.stopPropagation(),children:[
+      $.jsx('strong',{children:error||labels[info?.state]||'尚未检查更新'}),
+      $.jsx('div',{children:'当前定制版本：'+(info?.installedVersion||'旧版，等待更新')}),
+      info?.latestVersion?$.jsx('div',{children:'发布版本：'+info.latestVersion}):null,
+      $.jsx('div',{children:'上次检查：'+when(info?.lastCheckedAt)}),
+      $.jsx('div',{children:'Last update（上次更新）：'+when(info?.lastUpdatedAt)}),
+      info?.error?$.jsx('div',{children:info.error}):null,
+      ['available','error'].includes(info?.state)?$.jsx('button',{disabled:working,onClick:e=>{e.preventDefault();act('download');},children:'更新'}):null,
+      info?.state==='ready'?$.jsx('div',{children:'请先保存任务，完全退出 TokenBots Codex，再用桌面快捷方式打开，完成安装。'}):null,
+      $.jsx('button',{disabled:working,onClick:e=>{e.preventDefault();setOpen(false);},children:'收起'}),
+    ]}):null,
   ]});
 }

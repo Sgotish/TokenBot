@@ -1,0 +1,24 @@
+name: Windows OTA menu acceptance
+on: workflow_dispatch
+jobs:
+  menu:
+    runs-on: windows-latest
+    timeout-minutes: 18
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: node --test tests/windows-ota*.test.cjs tests/native-*.test.cjs
+      - name: Install reviewed desktop and exercise signed cumulative upgrade
+        shell: powershell
+        run: ./tests/windows-ota-menu.ps1
+      - name: Save actual desktop evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-ota-menu
+          path: reports/ota-menu-*

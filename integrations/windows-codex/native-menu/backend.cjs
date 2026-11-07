@@ -13,6 +13,23 @@ async function handle(request) {
     if (url.protocol !== 'app:' || url.host !== '-' || (origin && origin !== 'app://-')) {
       return reply({error: '来源不匹配'}, 403);
     }
+    if (url.pathname === '/tokenbots-native/update' || url.pathname === '/tokenbots-native/update/check' || url.pathname === '/tokenbots-native/update/download') {
+      const app=path.dirname(process.resourcesPath);
+      if(!fs.existsSync(path.join(app,'.tokenbots-custom-copy')))return reply({error:'无法确认安装位置'},503);
+      const updater=path.join(app,'ota-client.cjs');
+      const ota=require(updater);
+      const dir=path.join(app,'tokenbots-ota'); fs.mkdirSync(dir,{recursive:true});
+      if(url.pathname==='/tokenbots-native/update' && request.method==='GET') return reply(ota.state(dir));
+      if(request.method!=='POST')return reply({error:'Method not allowed'},405);
+      const action=url.pathname.endsWith('/check')?'check':url.pathname.endsWith('/download')?'fetch':null;
+      if(!action)return reply({error:'Not found'},404);
+      try {
+        await new Promise((resolve,reject)=>require('node:child_process').execFile(
+          path.join(process.resourcesPath,'cua_node','bin','node.exe'),[updater,action,app],
+          {windowsHide:true,timeout:150000,maxBuffer:4096},err=>err?reject(err):resolve()));
+        return reply(ota.state(dir));
+      } catch { return reply({...ota.state(dir),error:'更新操作未完成，请稍后重试。'},503); }
+    }
     const config = JSON.parse(fs.readFileSync(path.join(process.resourcesPath, 'tokenbots-native.json'), 'utf8'));
     const target = new URL(config.origin);
     const localTest = config.testOnlyLocalOrigin === true && target.protocol === 'http:' && target.hostname === '127.0.0.1';
