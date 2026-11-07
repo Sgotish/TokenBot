@@ -115,7 +115,7 @@ function TokenBotsNativeUpdate() {
   const when=value=>value?new Date(value).toLocaleString():'尚无记录';
   return $.jsxs($.Fragment,{children:[
     $.jsx(O,{onClick:e=>{e?.preventDefault?.();act('check');},children:'检查更新'}),
-    open?$.jsxs('div',{'data-tokenbots-update':true,role:'status',style:{padding:'8px 12px',minWidth:260,fontSize:12,lineHeight:1.8},onClick:e=>e.stopPropagation(),children:[
+    open?$.jsxs('div',{'data-tokenbots-update':true,role:'status',style:{padding:'8px 12px',width:'100%',boxSizing:'border-box',whiteSpace:'normal',overflowWrap:'anywhere',fontSize:12,lineHeight:1.8},onClick:e=>e.stopPropagation(),children:[
       $.jsx('strong',{children:error||labels[info?.state]||'尚未检查更新'}),
       $.jsx('div',{children:'当前定制版本：'+(info?.installedVersion||'旧版，等待更新')}),
       info?.latestVersion?$.jsx('div',{children:'发布版本：'+info.latestVersion}):null,

@@ -97,6 +97,21 @@ try{
  $latest=-join([char[]](0x5df2,0x7ecf,0x68c0,0x67e5,0x8fc7))
  if(-not($names-match $latest)){throw 'Native latest-version success not displayed'}
  if(-not($names-match 'Last update')){throw 'Native install timestamp missing'}
+ # Model an older recorded release to exercise the native download button with
+ # the same signed candidate. This is disposable test state, not customer data.
+ [IO.File]::WriteAllText((Join-Path $ota 'installed'),'2026110601')
+ $null=Invoke-Visible $check;Start-Sleep 4
+ $names=Evidence 'available'
+ $found=-join([char[]](0x53d1,0x73b0,0x65b0,0x7248,0x672c))
+ if(-not($names-match $found)){throw 'Native new-version state missing'}
+ $update=-join([char[]](0x66f4,0x65b0))
+ if(-not(Invoke-Visible $update)){throw 'Native download update button missing'}
+ Start-Sleep 5
+ $names=Evidence 'ready'
+ $status=Get-Content -Raw (Join-Path $ota 'status.json') | ConvertFrom-Json
+ if($status.state-ne 'ready'){throw 'Native click failed to stage verified release'}
+ if((Get-Content -Raw (Join-Path $ota 'installed')).Trim()-ne '2026110601'){throw 'Native download replaced active client'}
+ Write-Host 'PASS: native new-version button and staged signed update; running client was not replaced'
  Stop-Process -Id $server.Id -Force
  $null=Invoke-Visible $check;Start-Sleep 5
  $names=Evidence 'offline'
