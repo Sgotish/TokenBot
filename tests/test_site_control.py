@@ -111,3 +111,33 @@ class SiteControlTests(unittest.TestCase):
             self.assertNotIn(self.c.secret,str([z.read(n) for n in z.namelist()]))
 
 if __name__=='__main__':unittest.main()
+
+
+def test_parallel_dashboard_reads_queue_instead_of_rejecting_third_request():
+    import asyncio
+    import httpx
+    import threading
+    import time
+    class Control:
+        secret = 'synthetic-control-secret'
+        lock = threading.Lock()
+        active = peak = 0
+        def run(self, action, data):
+            with self.lock:
+                self.active += 1
+                self.peak = max(self.peak, self.active)
+            try:
+                time.sleep(.05)
+                return {'ok': True, 'action': action}
+            finally:
+                with self.lock: self.active -= 1
+    async def scenario():
+        control = Control()
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=create_app(control)),
+                base_url='http://test',headers={'Authorization':'Bearer '+control.secret}) as c:
+            results = await asyncio.gather(*(c.post('/internal/site/'+action,json={})
+                for action in ['status','billing','usage-visualization','status','billing','status']))
+            assert all(r.status_code == 200 for r in results)
+            assert control.peak == 2 and control.active == 0
+            assert (await c.post('/internal/site/status', json={})).status_code == 200
+    asyncio.run(asyncio.wait_for(scenario(), 5))

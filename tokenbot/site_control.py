@@ -251,13 +251,25 @@ class SiteControl:
 def create_app(control):
     app=FastAPI(docs_url=None,redoc_url=None,openapi_url=None)
     slots=asyncio.Semaphore(2)
+    waiting=0
     @app.post('/internal/site/{action}')
     async def call(action:str,request:Request):
+        nonlocal waiting
         auth=request.headers.get('authorization','')
         if not hmac.compare_digest(auth,'Bearer '+control.secret):
             return JSONResponse({'error':'Unauthorized'},status_code=401,headers={'Cache-Control':'no-store'})
-        if slots.locked(): return JSONResponse({'error':'操作正在处理，请稍后重试。'},status_code=429)
-        async with slots:
+        def busy():
+            return JSONResponse({'error':'操作正在处理，请稍后重试。'},status_code=429,
+                                headers={'Retry-After':'2','Cache-Control':'no-store'})
+        if waiting >= 12: return busy()
+        waiting += 1
+        try:
+            await asyncio.wait_for(slots.acquire(),timeout=10)
+        except TimeoutError:
+            return busy()
+        finally:
+            waiting -= 1
+        try:
             try:
                 async with asyncio.timeout(5):
                     body=bytearray()
@@ -282,6 +294,8 @@ def create_app(control):
                     message={'timeout':'回答生成超时，请稍后重试。','invalid_result':'回答格式未通过校验，请稍后重试。','upstream':'模型服务暂时不可用，请稍后重试。'}[category]
                     return JSONResponse({'error':message},status_code=503,headers={'Cache-Control':'no-store'})
                 return JSONResponse({'error':'操作未完成，请稍后重试。'},status_code=503,headers={'Cache-Control':'no-store'})
+        finally:
+            slots.release()
     return app
 
 
