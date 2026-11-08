@@ -77,3 +77,10 @@ finally:
     p.terminate()
     try: p.wait(timeout=5)
     except subprocess.TimeoutExpired: p.kill()
+# A fresh native process must still see the repaired metadata; repeating the
+# recovery must preserve the four durable records byte for byte.
+subprocess.run([str(node), str(app/'history-repair.cjs'), str(app)], env=env, check=True, timeout=30)
+result = json.loads((home/'tokenbots-history-check.json').read_text())
+assert result['status'] == 'completed' and result['active_page_count'] >= 4
+assert [hashlib.sha256(f.read_bytes()).hexdigest() for f in paths] == before
+print('PASS: fresh native process and repeated recovery preserve four project histories')

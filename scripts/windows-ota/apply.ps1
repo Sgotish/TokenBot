@@ -37,3 +37,12 @@ try {
     throw
 }
 # Backup remains in the private profile for deliberate rollback, never uploaded.
+# A cold-launch updater is executing the previously loaded launcher text. Run
+# recovery now as well, so the first restart after this upgrade is covered.
+if ($env:CODEX_HOME -and [IO.Path]::GetFullPath($env:CODEX_HOME).Equals([IO.Path]::GetFullPath($profile),[StringComparison]::OrdinalIgnoreCase)) {
+    try {
+        $node = Join-Path $AppDirectory 'resources\cua_node\bin\node.exe'
+        $repair = Join-Path $AppDirectory 'history-repair.cjs'
+        $null = Start-Process -FilePath $node -ArgumentList ('"'+$repair+'" "'+$AppDirectory+'"') -WindowStyle Hidden -Wait -PassThru
+    } catch { }
+}
