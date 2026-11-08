@@ -26,7 +26,11 @@ from tokenbot.gateway_events import record_failure
 ROOT = Path(__file__).resolve().parents[1]
 MODEL = 'gpt-6.1-sol'
 MAX_REQUEST_BYTES = 256 * 1024 * 1024  # Match the deployed upstream ingress envelope.
-MAX_BUFFERED_REQUESTS = 4
+# Uploads are spooled to disk, not retained as whole request bodies in RAM.
+# Keep execution bounded independently of the burst queue. Twelve retained
+# requests use at most 6 GiB during zstd decoding (compressed + decoded).
+MAX_BUFFERED_REQUESTS = 12
+MAX_EXECUTING_REQUESTS = 4
 
 
 class BufferedRequestLimit:
@@ -93,7 +97,7 @@ def request_selection(stream):
 
 def create_app(config, transport=None):
     concurrency = int(config.get('max_concurrency', 1))
-    if concurrency < 1 or concurrency > MAX_BUFFERED_REQUESTS:
+    if concurrency < 1 or concurrency > MAX_EXECUTING_REQUESTS:
         raise ValueError('Invalid bridge concurrency')
     lock = asyncio.Semaphore(concurrency)
     max_pending = int(config.get('max_pending', MAX_BUFFERED_REQUESTS - concurrency))

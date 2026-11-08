@@ -18,7 +18,7 @@ $profile = Join-Path $env:USERPROFILE ('.tokenbots-native-homes\' + $id)
 $config = Join-Path $profile 'config.toml'
 $backup = Join-Path $profile ('ota-rollback-' + [guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Path $backup | Out-Null
-$paths = @($config, (Join-Path $AppDirectory 'resources\tokenbots-images.cjs'), (Join-Path $profile 'skills\tokenbots-browser-check'), (Join-Path $profile 'skills\tokenbots-project-checkpoints'))
+$paths = @($config, (Join-Path $AppDirectory 'resources\tokenbots-images.cjs'), (Join-Path $profile 'skills\tokenbots-browser-check'), (Join-Path $profile 'skills\tokenbots-project-checkpoints'), (Join-Path $AppDirectory 'launch-tokenbots.ps1'), (Join-Path $AppDirectory 'history-repair.cjs'))
 $existed = @()
 for ($i=0; $i -lt $paths.Count; $i++) {
     $existed += (Test-Path -LiteralPath $paths[$i])
@@ -27,6 +27,7 @@ for ($i=0; $i -lt $paths.Count; $i++) {
 try {
     & (Join-Path $unpacked 'enable-browser.ps1') -AppDirectory $AppDirectory
     & (Join-Path $PSScriptRoot 'enable-images.ps1') -AppDirectory $AppDirectory
+    & (Join-Path $PSScriptRoot 'enable-history-repair.ps1') -AppDirectory $AppDirectory
     & (Join-Path $PSScriptRoot 'update-native.ps1') -AppDirectory $AppDirectory
 } catch {
     for ($i=0; $i -lt $paths.Count; $i++) {

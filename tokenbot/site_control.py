@@ -17,7 +17,7 @@ import zipfile
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 from starlette.concurrency import run_in_threadpool
-from .model_catalog import discovery
+from .model_catalog import discovery, image_capabilities
 from .partner_portal import PoolState, accepts_digest
 from .customer_billing import BillingError, CustomerBilling
 from .pricing_policy import PriceBook, pricing_lock
@@ -84,6 +84,7 @@ class SiteControl:
             'billing': {k:v for k,v in cfg.get('billing', {}).items() if k in ('status','mode','currency','multiplier','activated_at')},
             'reserved_credit': self.reserved_credit(cfg),
             'base_url':'https://pilot.tokenbots.top/v1', 'models':discovery()['data'],
+            'image_capabilities':image_capabilities(),
             'keys':[{k:v for k,v in item.items() if k != 'digest'} | {'id':kid}
                     for kid,item in cfg.get('aliases',{}).items()]}
 
@@ -141,6 +142,7 @@ class SiteControl:
                     return {'configured': False, 'periods': [], 'billing_enabled': False}
                 if action == 'status':
                     return {'enabled':True,'configured':False,'keys':[], 'models':discovery()['data'],
+                            'image_capabilities':image_capabilities(),
                             'base_url':'https://pilot.tokenbots.top/v1','pricing_mode':'test',
                             'accounts':[], 'records':[], 'totals':{}}
                 raise ControlError('尚未开通测试接入。', 404)

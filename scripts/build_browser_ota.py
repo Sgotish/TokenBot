@@ -19,7 +19,7 @@ asset = dict(name='browser-tools.zip',url=f'https://tokenbots.top/static/ota-{sh
 release = out / 'release'
 release.mkdir(exist_ok=True)
 (release / 'browser-asset.json').write_text(json.dumps(asset))
-for name in ['enable-images.ps1','tokenbots-images.cjs','ota-client.cjs','update-native.ps1','patch-copy.ps1','backend.cjs','component.js']:
+for name in ['enable-images.ps1','tokenbots-images.cjs','ota-client.cjs','update-native.ps1','patch-copy.ps1','backend.cjs','component.js','enable-history-repair.ps1','history-repair.cjs']:
     shutil.copyfile(root / 'integrations/windows-codex/native-menu' / name, release / name)
 shutil.copyfile(root / 'scripts/windows-ota/apply.ps1',release / 'apply.ps1')
 print(json.dumps(asset))

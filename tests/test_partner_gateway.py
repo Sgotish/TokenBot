@@ -217,10 +217,51 @@ def test_two_active_two_queued_fifo_and_overflow_never_calls_model():
     asyncio.run(asyncio.wait_for(scenario(),5))
 
 
-def test_queue_configuration_cannot_exceed_body_memory_budget():
+def test_six_requests_queue_without_old_four_request_rejection():
+    import asyncio
+    async def scenario():
+        gate = asyncio.Event()
+        calls = []
+        executing = peak = 0
+        async def upstream(request):
+            nonlocal executing, peak
+            calls.append(json.loads(request.content)['input'])
+            executing += 1
+            peak = max(peak, executing)
+            try:
+                await gate.wait()
+                return httpx.Response(200, json={'ok': True})
+            finally:
+                executing -= 1
+        cfg = {'expires_at': None, 'allowed_ips': ['127.0.0.1'],
+               'key': 'synthetic', 'max_concurrency': 2, 'max_pending': 10}
+        app = create_app(cfg, httpx.MockTransport(upstream))
+        async with app.router.lifespan_context(app):
+            async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app),
+                    base_url='http://test', headers={'authorization': 'Bearer synthetic'}) as c:
+                async def call(n):
+                    return await c.post('/v1/responses', json={'model': MODEL, 'input': n})
+                tasks = [asyncio.create_task(call(n)) for n in range(6)]
+                while app.state.pool_state.pending < 4:
+                    assert not any(t.done() for t in tasks), 'burst was rejected before queueing'
+                    await asyncio.sleep(.001)
+                assert len(calls) == 2
+                tasks[5].cancel()
+                await asyncio.gather(tasks[5], return_exceptions=True)
+                gate.set()
+                results = await asyncio.gather(*tasks[:5])
+                assert all(r.status_code == 200 for r in results)
+                assert sorted(calls) == list(range(5))  # no replay or cancelled call forwarded
+                assert peak == 2
+                assert app.state.pool_state.active == app.state.pool_state.pending == 0
+                assert (await call(6)).status_code == 200
+    asyncio.run(asyncio.wait_for(scenario(), 5))
+
+
+def test_queue_configuration_cannot_exceed_spool_or_execution_budget():
     import pytest
     base={'expires_at':None,'allowed_ips':['testclient'],'key':'synthetic'}
-    for limits in ({'max_concurrency':5}, {'max_concurrency':2,'max_pending':3},
+    for limits in ({'max_concurrency':5}, {'max_concurrency':2,'max_pending':11},
                    {'queue_timeout_seconds':181}):
         with pytest.raises(ValueError):create_app({**base,**limits})
 
@@ -298,28 +339,28 @@ def test_large_plain_and_zstd_bodies_preserved_and_limits_recorded(tmp_path, mon
 
 def test_buffer_capacity_covers_response_lifetime_and_releases_on_cancel():
     import asyncio
-    from tokenbot.partner_gateway import BufferedRequestLimit
+    from tokenbot.partner_gateway import BufferedRequestLimit, MAX_BUFFERED_REQUESTS
     async def scenario():
         entered=0;ready=asyncio.Event();finish=asyncio.Event();messages=[]
         async def app(scope,receive,send):
             nonlocal entered
             entered+=1
-            if entered==4:ready.set()
+            if entered==MAX_BUFFERED_REQUESTS:ready.set()
             await finish.wait()
         async def receive():return {'type':'http.request','body':b''}
         async def send(message):messages.append(message)
         guard=BufferedRequestLimit(app)
         scope={'type':'http','method':'POST','path':'/v1/responses'}
-        tasks=[asyncio.create_task(guard(scope,receive,send)) for _ in range(4)]
-        await ready.wait();await guard(scope,receive,send)
-        assert messages[0]['status']==503 and entered==4
+        tasks=[asyncio.create_task(guard(dict(scope),receive,send)) for _ in range(MAX_BUFFERED_REQUESTS)]
+        await ready.wait();await guard(dict(scope),receive,send)
+        assert messages[0]['status']==503 and entered==MAX_BUFFERED_REQUESTS
         tasks[0].cancel()
         try:await tasks[0]
         except asyncio.CancelledError:pass
-        assert guard.active==3
+        assert guard.active==MAX_BUFFERED_REQUESTS-1
         finish.set();await asyncio.gather(*tasks[1:]);assert guard.active==0
-        await guard(scope,receive,send);assert entered==5 and guard.active==0
-    asyncio.run(scenario())
+        await guard(dict(scope),receive,send);assert entered==MAX_BUFFERED_REQUESTS+1 and guard.active==0
+    asyncio.run(asyncio.wait_for(scenario(), 5))
 
 
 def test_native_compaction_v2_preserves_trigger_headers_and_opaque_output():

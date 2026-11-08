@@ -47,9 +47,9 @@ $sentinel=Join-Path $privateProfile 'customer-project.txt'
 $package=Join-Path $env:RUNNER_TEMP 'repair-package'
 New-Item -ItemType Directory $package | Out-Null
 foreach($name in @('enable-ota.ps1','ota-client.cjs','update-existing.ps1')) { Copy-Item (Join-Path 'integrations/windows-codex/native-menu' $name) $package }
-Copy-Item tests/fixtures/menu-ota-2026110701.json (Join-Path $package 'ota-seed.json')
+Copy-Item tests/fixtures/menu-ota-2026110801.json (Join-Path $package 'ota-seed.json')
 $env:OTA_TEST_PACKAGE=$package
-& node ./tests/ota-candidate-asset.cjs tests/fixtures/menu-ota-2026110701.json (Join-Path $package 'browser-asset.json')
+& node ./tests/ota-candidate-asset.cjs tests/fixtures/menu-ota-2026110801.json (Join-Path $package 'browser-asset.json')
 if($LASTEXITCODE-ne 0){throw 'Candidate verification failed'}
 $asset=Get-Content -Raw (Join-Path $package 'browser-asset.json') | ConvertFrom-Json
 curl.exe --fail --silent --show-error --max-time 120 $asset.url -o (Join-Path $package 'browser-tools.zip')
@@ -58,7 +58,7 @@ if($LASTEXITCODE-ne 0){throw 'Runtime download failed'}
 & (Join-Path $package 'update-existing.ps1') -AppDirectory $app
 if([IO.File]::ReadAllText($sentinel)-ne 'Keep customer project'){throw 'Customer project changed'}
 $ota=Join-Path $app 'tokenbots-ota'
-if((Get-Content -Raw (Join-Path $ota 'installed')).Trim()-ne '2026110701'){throw 'Wrong installed version'}
+if((Get-Content -Raw (Join-Path $ota 'installed')).Trim()-ne '2026110801'){throw 'Wrong installed version'}
 $updatedConfig=Get-Content -Raw (Join-Path $privateProfile 'config.toml')
 if($updatedConfig -notmatch '\[mcp_servers.tokenbots_desktop\]'){throw 'Desktop MCP not registered'}
 if($updatedConfig -match '(request_max_retries|stream_max_retries)\s*=\s*0'){throw 'Trial retry override remains'}
@@ -67,12 +67,15 @@ foreach($name in @('tokenbots-browser-check','tokenbots-project-checkpoints')) {
  if(Test-Path (Join-Path $privateProfile ('skills\'+$name))){throw 'Owned trial skill remains'}
 }
 Write-Host 'PASS: desktop tool registered, owned trial skills/retry overrides retired, compaction enabled'
+if(-not ([IO.File]::ReadAllText((Join-Path $app 'launch-tokenbots.ps1')).Contains('# TokenBots history repair v1'))){throw 'History startup hook missing'}
+& python tests/native_history_repair.py --app $app --home $privateProfile
+if($LASTEXITCODE-ne 0){throw 'Native history recovery failed'}
 $exeHash=(Get-FileHash (Join-Path $app 'ChatGPT.exe')).Hash
 & (Join-Path $package 'update-existing.ps1') -AppDirectory $app
 if((Get-FileHash (Join-Path $app 'ChatGPT.exe')).Hash-ne $exeHash){throw 'Repeated repair changed installed binary'}
 Write-Host 'PASS: real reviewed client overwritten, signed asset verified, repeat repair idempotent, customer project preserved'
 # Serve the signed candidate only to this disposable runner. No production feed switch.
-Copy-Item tests/fixtures/menu-ota-2026110701.json (Join-Path $env:RUNNER_TEMP 'candidate.json')
+Copy-Item tests/fixtures/menu-ota-2026110801.json (Join-Path $env:RUNNER_TEMP 'candidate.json')
 $server=Start-Process python -ArgumentList @('-m','http.server','18792','--bind','127.0.0.1','--directory',('"'+$env:RUNNER_TEMP+'"')) -PassThru
 $updater=Join-Path $app 'ota-client.cjs'
 $originalUpdater=[IO.File]::ReadAllText($updater)

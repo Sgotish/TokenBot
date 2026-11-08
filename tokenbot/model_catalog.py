@@ -10,6 +10,14 @@ MODEL_EFFORTS = {
 }
 
 
+def image_capabilities():
+    # The live integration uses a Responses tool, not an independently routable
+    # image model ID. Do not advertise unverified gpt-image-* aliases as models.
+    return [{'id': 'image_generation', 'name': '图片生成',
+             'model': 'gpt-6.1-sol', 'tool': 'generate_image',
+             'description': '在 TokenBots Codex 中直接描述想生成的图片，生成后保存为 PNG。'}]
+
+
 def discovery():
     return {'object': 'list', 'data': [
         {'id': model, 'object': 'model', 'owned_by': 'subscription-pilot',

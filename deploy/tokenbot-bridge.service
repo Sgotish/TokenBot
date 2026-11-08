@@ -18,7 +18,7 @@ NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=strict
 ProtectHome=true
-# Four private disk-spooled requests; ingress matches upstream 256 MiB.
+# Up to twelve private disk-spooled requests; execution is separately bounded.
 # JSON parsing retains routing metadata and at most the current scalar.
 MemoryMax=768M
 
