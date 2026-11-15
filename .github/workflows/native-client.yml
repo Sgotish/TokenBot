@@ -22,10 +22,10 @@ jobs:
           "TB_APP_DIR=$appDirectory" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
       - name: Launch actual Windows application
         shell: powershell
-        run: ./tests/windows-native-runtime.ps1 -AppDirectory $env:TB_APP_DIR
-      - name: Inspect native plugin directory
-        shell: powershell
-        run: ./tests/windows-plugin-inspection.ps1
+        run: |
+          # Keep the desktop and its fixture alive in the same Windows job step.
+          ./tests/windows-native-runtime.ps1 -AppDirectory $env:TB_APP_DIR
+          ./tests/windows-plugin-inspection.ps1
       - name: Save diagnostics
         if: always()
         uses: actions/upload-artifact@v4
