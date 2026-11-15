@@ -23,30 +23,42 @@ try {
     $adapters = @{
         '26.1013.40934' = @{ menu='profile-dropdown-items-71a6e604645d.js'; hash='2e9cd921b030aab1dbd26e12ac1698f4bc9c3129b442e4c65ae690f43d3574c3'; sidebar='n'; react='ma'; item='O'; handler='browser-background-switches-DmHa3bqb.js' }
         '26.1016.51333' = @{ menu='profile-dropdown-items-9ba35f09babf.js'; hash='eecb54cf3c4f894d07d9bc46331f9c56cd4bfea4a0ce6b71b213e529ce14e9c3'; sidebar='i'; react='ja'; item='K'; handler='browser-background-switches-oSaaOz4s.js'; handlerHash='e45e03af9526ac3b9ce1221348893174229fd5714be143bac12c6885f234d605' }
+        '26.1111.21308' = @{ menu='async/583085.4250d5c902.js'; hash='59c4b61f394a7c5fa7227c91901d0cfca37acb21cae64eef2897e8888218aac2'; layout='rspack'; handler='early-bootstrap.js'; handlerHash='d0d77d4cc4be9d950c7f1c83718b501769769b7c73215b95953e3bcf18fd7b54' }
     }
     $adapter = $adapters[$package.version]
     if (-not $adapter) { throw 'This release needs adaptation before patching. Original installation is unchanged.' }
     $assets = $tree.files.webview.files.assets.files
     $menuName = $adapter.menu
-    $entry = $assets.$menuName
+    $entry = if ($adapter.layout -eq 'rspack') { $assets.async.files.'583085.4250d5c902.js' } else { $assets.$menuName }
     $menu = Read-Entry $entry
     $sha = [Security.Cryptography.SHA256]::Create()
     function Hash-Bytes([byte[]]$bytes) { return ([BitConverter]::ToString($sha.ComputeHash($bytes))).Replace('-','').ToLowerInvariant() }
     if ((Hash-Bytes ([Text.Encoding]::UTF8.GetBytes($menu))) -ne $adapter.hash) { throw 'Menu differs from the reviewed release; nothing changed.' }
-    $anchor = 'Pn=f?(0,$.jsx)'
-    if ([regex]::Matches($menu,[regex]::Escape($anchor)).Count -ne 1) { throw 'Menu anchor is ambiguous.' }
-    $menu = $menu.Replace($anchor,('Pn=' + $adapter.sidebar + '?.modelProviderName?.startsWith(`TokenBots`)?(0,$.jsx)(TokenBotsNativeUsage,{}):f?(0,$.jsx)'))
     $component = [IO.File]::ReadAllText((Join-Path $PSScriptRoot 'component.js'))
-    $component = $component.Replace('ma.use', ($adapter.react + '.use')).Replace('$.jsx(O,', ('$.jsx(' + $adapter.item + ','))
-    $menu += "`n" + $component
+    if ($adapter.layout -eq 'rspack') {
+        # Keep upstream plugin discovery, authentication and entitlement checks intact.
+        # Rspack scopes React/JSX inside the profile module instead of the whole file.
+        $anchor = 'aT=tL?(0,a.jsx)'
+        $scope = 'function nm(e){var t;'
+        if ([regex]::Matches($menu,[regex]::Escape($anchor)).Count -ne 1 -or [regex]::Matches($menu,[regex]::Escape($scope)).Count -ne 1) { throw 'Menu scope changed.' }
+        $component = $component.Replace('ma.use','w.use').Replace('$.jsx(O,','a.jsx(H.tJ,').Replace('$.','a.')
+        $menu = $menu.Replace($scope, ($component + "`n" + $scope))
+        $menu = $menu.Replace($anchor,'aT=tj?.modelProviderName?.startsWith("TokenBots")?(0,a.jsx)(TokenBotsNativeUsage,{}):tL?(0,a.jsx)')
+    } else {
+        $anchor = 'Pn=f?(0,$.jsx)'
+        if ([regex]::Matches($menu,[regex]::Escape($anchor)).Count -ne 1) { throw 'Menu anchor is ambiguous.' }
+        $menu = $menu.Replace($anchor,('Pn=' + $adapter.sidebar + '?.modelProviderName?.startsWith(`TokenBots`)?(0,$.jsx)(TokenBotsNativeUsage,{}):f?(0,$.jsx)'))
+        $component = $component.Replace('ma.use', ($adapter.react + '.use')).Replace('$.jsx(O,', ('$.jsx(' + $adapter.item + ','))
+        $menu += "`n" + $component
+    }
     $patches['webview/assets/' + $menuName] = [Text.Encoding]::UTF8.GetBytes($menu)
     $build = $tree.files.'.vite'.files.build.files
     $handlerName = $adapter.handler
     $handler = Read-Entry $build.$handlerName
     if ($adapter.handlerHash -and (Hash-Bytes ([Text.Encoding]::UTF8.GetBytes($handler))) -ne $adapter.handlerHash) { throw 'Protocol module differs from the reviewed release.' }
-    $anchor = 'o.protocol.handle(`app`,async t=>{let n=L(t.url,e);'
+    $anchor = if ($adapter.layout -eq 'rspack') { 'c.protocol.handle("app",async t=>{' } else { 'o.protocol.handle(`app`,async t=>{' }
     if ([regex]::Matches($handler,[regex]::Escape($anchor)).Count -ne 1) { throw 'Protocol handler changed.' }
-    $handler = $handler.Replace($anchor,'o.protocol.handle(`app`,async t=>{if(new URL(t.url).host===`-`&&new URL(t.url).pathname.startsWith(`/tokenbots-native/`))return require(`./tokenbots-native.cjs`).handle(t);let n=L(t.url,e);')
+    $handler = $handler.Replace($anchor,($anchor + 'if(new URL(t.url).host===`-`&&new URL(t.url).pathname.startsWith(`/tokenbots-native/`))return require(`./tokenbots-native.cjs`).handle(t);'))
     $patches['.vite/build/' + $handlerName] = [Text.Encoding]::UTF8.GetBytes($handler)
     $patches['.vite/build/tokenbots-native.cjs'] = [IO.File]::ReadAllBytes((Join-Path $PSScriptRoot 'backend.cjs'))
     $build | Add-Member -NotePropertyName 'tokenbots-native.cjs' -NotePropertyValue ([pscustomobject]@{size=0;offset='0'})
