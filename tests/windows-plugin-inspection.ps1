@@ -20,6 +20,16 @@ foreach($name in @('Plugins','Skills','插件','技能')){
   if($el.Current.Name-ne $name -or $el.Current.IsOffscreen -or -not $el.Current.IsEnabled){continue}
   $pattern=$null
   if($el.TryGetCurrentPattern([Windows.Automation.InvokePattern]::Pattern,[ref]$pattern)){$pattern.Invoke();$opened=$true;break}
+  if($el.TryGetCurrentPattern([Windows.Automation.SelectionItemPattern]::Pattern,[ref]$pattern)){$pattern.Select();$opened=$true;break}
+  # The official navigation is a link without InvokePattern on this build.
+  # Use its observed visible bounds, as in the preceding native runtime test.
+  $rect=$el.Current.BoundingRectangle
+  if($rect.Width -gt 0 -and $rect.Height -gt 0){
+   [NativeTestMouse]::SetCursorPos([int]($rect.X+$rect.Width/2),[int]($rect.Y+$rect.Height/2))|Out-Null
+   [NativeTestMouse]::mouse_event(2,0,0,0,[UIntPtr]::Zero)
+   [NativeTestMouse]::mouse_event(4,0,0,0,[UIntPtr]::Zero)
+   $opened=$true;break
+  }
  }
  if($opened){break}
 }

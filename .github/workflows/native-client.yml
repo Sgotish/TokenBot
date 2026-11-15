@@ -23,6 +23,9 @@ jobs:
       - name: Launch actual Windows application
         shell: powershell
         run: ./tests/windows-native-runtime.ps1 -AppDirectory $env:TB_APP_DIR
+      - name: Inspect native plugin directory
+        shell: powershell
+        run: ./tests/windows-plugin-inspection.ps1
       - name: Save diagnostics
         if: always()
         uses: actions/upload-artifact@v4
@@ -30,5 +33,6 @@ jobs:
           name: native-client-runtime
           path: |
             reports/native-*
+            reports/plugin-*
             ~/AppData/Local/TokenBots/Codex-custom-profile/logs/**
           if-no-files-found: warn
