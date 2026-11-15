@@ -2,6 +2,15 @@
 # The preceding runtime test leaves the real app open. Inspect the native
 # plugin surface with the synthetic API-key profile; do not claim OAuth access.
 Add-Type -AssemblyName UIAutomationClient,UIAutomationTypes,System.Drawing,System.Windows.Forms
+if (-not ('NativeTestMouse' -as [type])) {
+ Add-Type @'
+using System.Runtime.InteropServices;
+public class NativeTestMouse {
+ [DllImport("user32.dll")] public static extern bool SetCursorPos(int x,int y);
+ [DllImport("user32.dll")] public static extern void mouse_event(uint flags,uint x,uint y,uint data,System.UIntPtr extra);
+}
+'@
+}
 [Windows.Forms.SendKeys]::SendWait('{ESC}{ESC}')
 Start-Sleep -Seconds 2
 function Snapshot([string]$label){
