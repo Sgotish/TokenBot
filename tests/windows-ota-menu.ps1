@@ -4,6 +4,8 @@ New-Item -ItemType Directory -Force reports | Out-Null
 $legacy=Join-Path $env:RUNNER_TEMP 'legacy-native'
 New-Item -ItemType Directory -Path $legacy | Out-Null
 Copy-Item integrations/windows-codex/native-menu/* $legacy
+$legacyInstaller=git show '7112886:integrations/windows-codex/native-menu/install.ps1'
+[IO.File]::WriteAllText((Join-Path $legacy 'install.ps1'),($legacyInstaller -join "`n"),(New-Object Text.UTF8Encoding($false)))
 foreach ($name in @('component.js','backend.cjs')) {
     $content=git show "1fd0d4a:integrations/windows-codex/native-menu/$name"
     [IO.File]::WriteAllText((Join-Path $legacy $name),($content -join "`n"),(New-Object Text.UTF8Encoding($false)))

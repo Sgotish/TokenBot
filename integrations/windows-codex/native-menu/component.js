@@ -118,7 +118,10 @@ function TokenBotsNativeUpdate() {
     open?$.jsxs('div',{'data-tokenbots-update':true,role:'status',style:{padding:'8px 12px',width:'100%',boxSizing:'border-box',whiteSpace:'normal',overflowWrap:'anywhere',fontSize:12,lineHeight:1.8},onClick:e=>e.stopPropagation(),children:[
       $.jsx('strong',{children:error||labels[info?.state]||'尚未检查更新'}),
       $.jsx('div',{children:'当前定制版本：'+(info?.installedVersion||'旧版，等待更新')}),
+      info?.desktopVersion?$.jsx('div',{children:'客户端版本：'+info.desktopVersion}):null,
+      info?.latestDesktopVersion?$.jsx('div',{children:'本次客户端版本：'+info.latestDesktopVersion}):null,
       info?.latestVersion?$.jsx('div',{children:'发布版本：'+info.latestVersion}):null,
+      info?.state==='downloading'&&info?.totalBytes?$.jsx('div',{children:'下载进度：'+Math.min(100,Math.floor(100*(info.downloadedBytes||0)/info.totalBytes))+'%'}):null,
       $.jsx('div',{children:'上次检查：'+when(info?.lastCheckedAt)}),
       $.jsx('div',{children:'Last update（上次更新）：'+when(info?.lastUpdatedAt)}),
       info?.error?$.jsx('div',{children:info.error}):null,

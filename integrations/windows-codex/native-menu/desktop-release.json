@@ -1,0 +1,19 @@
+{
+  "version": 2026111501,
+  "architectures": {
+    "x64": {
+      "applicationVersion": "26.1111.21308",
+      "packageVersion": "26.1111.2228.0",
+      "sha256": "9af8619e929f00369a47326717f9515205a0e25dd409bc4c29af62c74c1ed898",
+      "size": 1057802768,
+      "url": "https://pilot.tokenbots.top/downloads/ChatGPT-x64-9af8619e929f00369a47326717f9515205a0e25dd409bc4c29af62c74c1ed898.msix"
+    },
+    "arm64": {
+      "applicationVersion": "26.1111.21308",
+      "packageVersion": "26.1111.2228.0",
+      "sha256": "e9f413125a05f02f4bfde82685d6be64f19f450844b3f0d0339129b1907ccb8f",
+      "size": 1172354770,
+      "url": "https://pilot.tokenbots.top/downloads/ChatGPT-arm64-e9f413125a05f02f4bfde82685d6be64f19f450844b3f0d0339129b1907ccb8f.msix"
+    }
+  }
+}

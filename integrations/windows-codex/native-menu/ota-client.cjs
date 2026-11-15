@@ -7,6 +7,7 @@ const PUBLIC_KEY = "-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEAIlfRpsrPJ6WNGedi
 const ENDPOINT = 'https://tokenbots.top/static/windows-ota-v1.json';
 const MAX = 4 * 1024 * 1024;
 const MAX_ASSET = 24 * 1024 * 1024;
+const MAX_DESKTOP = 1536 * 1024 * 1024;
 function verify(bytes, publicKey = PUBLIC_KEY) {
   if (bytes.length > MAX) throw Error('Update exceeds size limit');
   const envelope = JSON.parse(bytes);
@@ -30,6 +31,15 @@ function verify(bytes, publicKey = PUBLIC_KEY) {
       assetNames.add(a.name);
     }
   }
+  if (release.desktop !== undefined) {
+    if (!release.desktop || typeof release.desktop !== 'object' || Array.isArray(release.desktop)) throw Error('Invalid desktop release');
+    for (const [arch,d] of Object.entries(release.desktop)) {
+      if (!['x64','arm64'].includes(arch) || !d || !/^[a-f0-9]{64}$/.test(d.sha256) ||
+          !Number.isSafeInteger(d.size) || d.size < 1 || d.size > MAX_DESKTOP ||
+          !/^\d+\.\d+\.\d+$/.test(d.applicationVersion) || !/^\d+\.\d+\.\d+\.\d+$/.test(d.packageVersion) ||
+          d.url !== `https://pilot.tokenbots.top/downloads/ChatGPT-${arch}-${d.sha256}.msix`) throw Error('Invalid desktop artifact');
+    }
+  }
   return release;
 }
 function atomic(file, data) {
@@ -49,10 +59,12 @@ function state(dir) {
   try { value = JSON.parse(fs.readFileSync(path.join(dir,'status.json'),'utf8')); } catch {}
   let receipt = {};
   try { receipt = JSON.parse(fs.readFileSync(path.join(dir,'receipt.json'),'utf8')); } catch {}
-  if (['checking','downloading'].includes(value.state) && (!value.lastAttemptAt || Date.now()-Date.parse(value.lastAttemptAt)>180000)) {
+  let desktopVersion=null;
+  try { desktopVersion=/^AppVersion=([^\r\n]+)\r?$/m.exec(fs.readFileSync(path.join(dir,'..','resources','owl-app.ini'),'utf8'))?.[1] || null; } catch {}
+  if (['checking','downloading'].includes(value.state) && (!value.lastAttemptAt || Date.now()-Date.parse(value.lastAttemptAt)>900000)) {
     value={...value,state:'error',error:'上次更新操作已中断，请重新检查更新。'};
   }
-  return {...value, installedVersion:installed(dir), lastUpdatedAt:receipt.installedAt || null};
+  return {...value, installedVersion:installed(dir),desktopVersion,lastUpdatedAt:receipt.installedAt || null};
 }
 function saveState(dir, patch) {
   const value={...state(dir),...patch};
@@ -84,10 +96,12 @@ async function check(dir,key,fetcher=fetch) {
     // A stale/rolled-back server feed must not claim that this device is latest.
     if(r.version<installed(dir))throw Error('Update feed is older than this installation');
     atomic(path.join(dir,'checked.json'),bytes);
+    const desktop=r.desktop?.[process.arch];
+    if(r.version===installed(dir) && desktop && state(dir).desktopVersion!==desktop.applicationVersion)throw Error('Desktop version does not match release');
     const ready=fs.existsSync(path.join(dir,'release-'+r.version+'.json')) &&
-      (r.assets||[]).every(a=>assetValid(dir,a));
+      (r.assets||[]).every(a=>assetValid(dir,a)) && (!desktop || await desktopValid(dir,desktop));
     return saveState(dir,{state:r.version===installed(dir)?'latest':ready?'ready':'available',
-      latestVersion:r.version,lastCheckedAt:new Date().toISOString(),error:null});
+      latestVersion:r.version,latestDesktopVersion:desktop?.applicationVersion || null,lastCheckedAt:new Date().toISOString(),error:null});
   } catch(e) {
     saveState(dir,{state:'error',error:'检查失败，请检查网络后重试；尚未确认最新版本。'}); throw e;
   }
@@ -113,6 +127,35 @@ function assetValid(dir,a){
   const file=assetPath(dir,a);
   return fs.existsSync(file)&&fs.statSync(file).size===a.size&&crypto.createHash('sha256').update(fs.readFileSync(file)).digest('hex')===a.sha256;
 }
+function desktopPath(dir,d){return path.join(dir,'assets',d.sha256+'.msix');}
+async function desktopValid(dir,d){
+  const file=desktopPath(dir,d);
+  if(!fs.existsSync(file)||fs.statSync(file).size!==d.size)return false;
+  const hash=crypto.createHash('sha256');
+  for await(const data of fs.createReadStream(file))hash.update(data);
+  return hash.digest('hex')===d.sha256;
+}
+async function prepareDesktop(dir,d,fetcher=fetch){
+  if(await desktopValid(dir,d))return;
+  fs.mkdirSync(path.join(dir,'assets'),{recursive:true});
+  const temp=desktopPath(dir,d)+'.'+crypto.randomUUID()+'.tmp';
+  let file;
+  try {
+    const res=await fetcher(d.url,{redirect:'error',signal:AbortSignal.timeout(720000),cache:'no-store'});
+    if(!res.ok)throw Error('Desktop download failed');
+    file=await fs.promises.open(temp,'wx');
+    const hash=crypto.createHash('sha256');let length=0,last=0;
+    for await(const bytes of res.body){
+      length+=bytes.length;if(length>d.size)throw Error('Desktop exceeds size limit');
+      hash.update(bytes);
+      // FileHandle.write may write only part of a chunk.
+      for(let offset=0;offset<bytes.length;){const result=await file.write(bytes,offset,bytes.length-offset);if(!result.bytesWritten)throw Error('Desktop write failed');offset+=result.bytesWritten;}
+      if(Date.now()-last>1000){saveState(dir,{state:'downloading',lastAttemptAt:new Date().toISOString(),downloadedBytes:length,totalBytes:d.size});last=Date.now();}
+    }
+    if(length!==d.size||hash.digest('hex')!==d.sha256)throw Error('Desktop checksum mismatch');
+    await file.close();file=null;fs.renameSync(temp,desktopPath(dir,d));
+  } finally {if(file)await file.close();fs.rmSync(temp,{force:true});}
+}
 async function prepare(dir,bytes,key,fetcher=fetch){
   const r=verify(bytes,key);
   if(r.version<=installed(dir))return;
@@ -122,6 +165,7 @@ async function prepare(dir,bytes,key,fetcher=fetch){
     if(data.length!==a.size || crypto.createHash('sha256').update(data).digest('hex')!==a.sha256)throw Error('Asset checksum mismatch');
     fs.mkdirSync(path.join(dir,'assets'),{recursive:true});atomic(assetPath(dir,a),data);
   }
+  if(r.desktop?.[process.arch])await prepareDesktop(dir,r.desktop[process.arch],fetcher);
   stage(dir,bytes,key);
   saveState(dir,{state:'ready',version:r.version,latestVersion:r.version,error:null});
 }
@@ -144,9 +188,20 @@ function applyLatest(dir, app, run, key) {
   const temp=fs.mkdtempSync(path.join(dir,'apply-'));
   try {
     for(const f of r.files)fs.writeFileSync(path.join(temp,f.name),Buffer.from(f.data,'base64'),{flag:'wx'});
-    run(path.join(temp,'apply.ps1'),app);
+    run(path.join(temp,'apply.ps1'),app,version);
+    const receipt={version,installedAt:new Date().toISOString(),desktopVersion:r.desktop?.[process.arch]?.applicationVersion || null};
+    const nextFile=path.join(app,'tokenbots-next-app.json');
+    if(fs.existsSync(nextFile)){
+      const next=JSON.parse(fs.readFileSync(nextFile,'utf8'));
+      if(next.version!==version || !path.isAbsolute(next.app) || path.basename(next.app)!=='app' || path.dirname(path.dirname(next.app))!==path.dirname(path.dirname(app)) ||
+         !fs.existsSync(path.join(next.app,'.tokenbots-custom-copy')))throw Error('Invalid desktop handover');
+      const nextDir=path.join(next.app,'tokenbots-ota');fs.mkdirSync(nextDir,{recursive:true});
+      atomic(path.join(nextDir,'installed'),String(version));atomic(path.join(nextDir,'receipt.json'),JSON.stringify(receipt));
+      saveState(nextDir,{state:'installed',version,latestVersion:version,error:null});
+      fs.rmSync(nextFile);
+    }
     atomic(path.join(dir,'installed'),String(version));
-    atomic(path.join(dir,'receipt.json'),JSON.stringify({version,installedAt:new Date().toISOString()}));
+    atomic(path.join(dir,'receipt.json'),JSON.stringify(receipt));
     saveState(dir,{state:'installed',version,error:null});
     for(const old of fs.readdirSync(dir).filter(n=>/^release-\d+\.json$/.test(n)&&Number(n.slice(8,-5))<=version))fs.rmSync(path.join(dir,old),{force:true});
   } catch(e) { saveState(dir,{state:'error',error:'更新安装失败，已保留原版本，请重试或联系客服。'}); throw e; }
@@ -162,12 +217,12 @@ async function main() {
   else if(mode==='stage')stage(dir,fs.readFileSync(input));
   else if(mode==='prepare')await prepare(dir,fs.readFileSync(input));
   else if(mode==='fetch')await download(dir);
-  else if(mode==='apply')applyLatest(dir,app,(script,target)=>{
+  else if(mode==='apply')applyLatest(dir,app,(script,target,version)=>{
     const ps=path.join(process.env.SystemRoot,'System32','WindowsPowerShell','v1.0','powershell.exe');
-    child.execFileSync(ps,['-NoProfile','-NonInteractive','-ExecutionPolicy','Bypass','-File',script,'-AppDirectory',target],{stdio:'inherit',windowsHide:true});
+    child.execFileSync(ps,['-NoProfile','-NonInteractive','-ExecutionPolicy','Bypass','-File',script,'-AppDirectory',target],{stdio:'inherit',windowsHide:true,env:{...process.env,TOKENBOTS_OTA_PROTOCOL:'2',TOKENBOTS_OTA_VERSION:String(version)}});
   });
   else throw Error('Unknown operation');
   });
 }
-module.exports={stage,applyLatest,verify,prepare,download,assetValid,state,check,exclusive};
+module.exports={stage,applyLatest,verify,prepare,download,assetValid,state,check,exclusive,prepareDesktop,desktopValid};
 if(require.main===module)main().catch(()=>{process.exitCode=1;});

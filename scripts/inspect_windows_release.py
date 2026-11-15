@@ -52,9 +52,12 @@ def inspect_asar(stream):
 
     package = json.loads(read_entry(header['files']['package.json']))
     assets = header['files']['webview']['files']['assets']['files']
+    if package['version'] == '26.1111.21308':
+        menu = 'async/583085.4250d5c902.js'
+        assets = {menu: assets.get('async', {}).get('files', {}).get(menu.split('/')[-1], {})}
     bundles = []
     for name, entry in assets.items():
-        if not name.endswith('.js') or not name.startswith(('profile-dropdown', 'app-initial-')):
+        if not name.endswith('.js') or not (name.startswith(('profile-dropdown', 'app-initial-')) or name == 'async/583085.4250d5c902.js'):
             continue
         data = read_entry(entry)
         code = data.decode('utf-8')
@@ -69,7 +72,7 @@ def inspect_asar(stream):
                 'authAccountId', 'currentAccountId',
             )},
         })
-    if not any(b['file'].startswith('profile-dropdown') for b in bundles):
+    if not any(b['file'].startswith('profile-dropdown') or b['file'] == 'async/583085.4250d5c902.js' for b in bundles):
         raise ValueError('Menu structure changed; manual release review required')
     return {'application_version': package['version'], 'bundles': bundles}
 

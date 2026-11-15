@@ -7,7 +7,7 @@ if ($architecture -eq 'AMD64') {
     $releaseHash = '9af8619e929f00369a47326717f9515205a0e25dd409bc4c29af62c74c1ed898'
 } elseif ($architecture -eq 'ARM64') {
     $targetArch = 'arm64'
-    $releaseHash = 'bff7e61e8e7b5cf3b6a85d9cd60933160625162f1c148672bd93bb467fbd0888'
+    $releaseHash = 'e9f413125a05f02f4bfde82685d6be64f19f450844b3f0d0339129b1907ccb8f'
 } else { throw 'This build requires Windows x64 or ARM64. No installed app was changed.' }
 $base = Join-Path $env:LOCALAPPDATA 'TokenBots\Codex-native'
 New-Item -ItemType Directory -Force -Path $base | Out-Null
@@ -16,7 +16,7 @@ if (-not $ArchivePath) {
     [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
     # The vendor's latest URL changes independently of the reviewed adapter.
     # Retain the byte-identical signed x64 artifact for repeatable clean installs.
-    $url = if ($targetArch -eq 'x64') { 'https://persistent.oaistatic.com/codex-app-prod/ChatGPT-x64.msix' } else { 'https://persistent.oaistatic.com/codex-app-prod/ChatGPT-arm64.msix' }
+    $url = 'https://pilot.tokenbots.top/downloads/ChatGPT-' + $targetArch + '-' + $releaseHash + '.msix'
     if ((Test-Path -LiteralPath $download) -and (Get-FileHash -LiteralPath $download -Algorithm SHA256).Hash.ToLowerInvariant() -eq $releaseHash) {
         Write-Host 'Using cached official desktop package.'
     } else {

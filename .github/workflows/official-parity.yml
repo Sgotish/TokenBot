@@ -1,0 +1,31 @@
+name: Windows official base upgrade acceptance
+on: workflow_dispatch
+jobs:
+  desktop-upgrade:
+    runs-on: windows-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - run: node --test tests/windows-ota*.test.cjs tests/native-*.test.cjs
+      - name: Upgrade retained October installation to November desktop
+        shell: powershell
+        run: ./tests/windows-official-upgrade.ps1
+      - name: Run actual desktop and inspect plugins
+        shell: powershell
+        run: |
+          ./tests/windows-native-runtime.ps1 -AppDirectory $env:TB_UPGRADED_APP
+          ./tests/windows-plugin-inspection.ps1
+      - name: Save native and migration evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-official-upgrade
+          path: reports/**

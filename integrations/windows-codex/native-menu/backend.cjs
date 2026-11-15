@@ -26,7 +26,7 @@ async function handle(request) {
       try {
         await new Promise((resolve,reject)=>require('node:child_process').execFile(
           path.join(process.resourcesPath,'cua_node','bin','node.exe'),[updater,action,app],
-          {windowsHide:true,timeout:150000,maxBuffer:4096},err=>err?reject(err):resolve()));
+          {windowsHide:true,timeout:840000,maxBuffer:4096},err=>err?reject(err):resolve()));
         return reply(ota.state(dir));
       } catch { const result=ota.state(dir); return reply({...result,error:result.error||'更新操作未完成，请稍后重试。'},503); }
     }

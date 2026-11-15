@@ -23,7 +23,7 @@ try {
     $adapters = @{
         '26.1013.40934' = @{ menu='profile-dropdown-items-71a6e604645d.js'; hash='2e9cd921b030aab1dbd26e12ac1698f4bc9c3129b442e4c65ae690f43d3574c3'; sidebar='n'; react='ma'; item='O'; handler='browser-background-switches-DmHa3bqb.js' }
         '26.1016.51333' = @{ menu='profile-dropdown-items-9ba35f09babf.js'; hash='eecb54cf3c4f894d07d9bc46331f9c56cd4bfea4a0ce6b71b213e529ce14e9c3'; sidebar='i'; react='ja'; item='K'; handler='browser-background-switches-oSaaOz4s.js'; handlerHash='e45e03af9526ac3b9ce1221348893174229fd5714be143bac12c6885f234d605' }
-        '26.1111.21308' = @{ menu='async/583085.4250d5c902.js'; hash='59c4b61f394a7c5fa7227c91901d0cfca37acb21cae64eef2897e8888218aac2'; layout='rspack'; handler='early-bootstrap.js'; handlerHash='d0d77d4cc4be9d950c7f1c83718b501769769b7c73215b95953e3bcf18fd7b54' }
+        '26.1111.21308' = @{ menu='async/583085.4250d5c902.js'; hash='59c4b61f394a7c5fa7227c91901d0cfca37acb21cae64eef2897e8888218aac2'; layout='rspack'; handler='early-bootstrap.js'; handlerHashes=@('d0d77d4cc4be9d950c7f1c83718b501769769b7c73215b95953e3bcf18fd7b54','4eec2dc8420144c2373a0c2d0730085ebdb2418d82f001764d9e4ac1a4180ac4') }
     }
     $adapter = $adapters[$package.version]
     if (-not $adapter) { throw 'This release needs adaptation before patching. Original installation is unchanged.' }
@@ -56,6 +56,7 @@ try {
     $handlerName = $adapter.handler
     $handler = Read-Entry $build.$handlerName
     if ($adapter.handlerHash -and (Hash-Bytes ([Text.Encoding]::UTF8.GetBytes($handler))) -ne $adapter.handlerHash) { throw 'Protocol module differs from the reviewed release.' }
+    if ($adapter.handlerHashes -and (Hash-Bytes ([Text.Encoding]::UTF8.GetBytes($handler))) -notin $adapter.handlerHashes) { throw 'Protocol module differs from the reviewed release.' }
     $anchor = if ($adapter.layout -eq 'rspack') { 'c.protocol.handle("app",async t=>{' } else { 'o.protocol.handle(`app`,async t=>{' }
     if ([regex]::Matches($handler,[regex]::Escape($anchor)).Count -ne 1) { throw 'Protocol handler changed.' }
     $handler = $handler.Replace($anchor,($anchor + 'if(new URL(t.url).host===`-`&&new URL(t.url).pathname.startsWith(`/tokenbots-native/`))return require(`./tokenbots-native.cjs`).handle(t);'))
