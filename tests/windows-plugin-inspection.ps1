@@ -1,4 +1,4 @@
-$ErrorActionPreference='Stop'
+﻿$ErrorActionPreference='Stop'
 # The preceding runtime test leaves the real app open. Inspect the native
 # plugin surface with the synthetic API-key profile; do not claim OAuth access.
 Add-Type -AssemblyName UIAutomationClient,UIAutomationTypes,System.Drawing,System.Windows.Forms

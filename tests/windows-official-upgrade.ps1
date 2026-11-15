@@ -1,4 +1,4 @@
-$ErrorActionPreference='Stop'
+﻿$ErrorActionPreference='Stop'
 New-Item -ItemType Directory -Force reports | Out-Null
 $legacy=Join-Path $env:RUNNER_TEMP 'legacy-official-upgrade'
 New-Item -ItemType Directory -Path $legacy | Out-Null
@@ -54,7 +54,7 @@ $env:TOKENBOTS_OTA_PROTOCOL=$null
 try{& (Join-Path $release 'apply.ps1') -AppDirectory $old;throw 'Legacy updater unexpectedly applied desktop'}catch{if($_ -notmatch 'updater was upgraded'){throw}}
 if((Get-FileHash (Join-Path $old 'ChatGPT.exe')).Hash-ne $oldHash){throw 'Bootstrap changed desktop'}
 if(-not ([IO.File]::ReadAllText((Join-Path $old 'launch-tokenbots.ps1')).Contains('# TokenBots handover entry v2'))){throw 'Launcher bootstrap missing'}
-curl.exe --fail --location --silent --show-error --max-time 360 https://persistent.oaistatic.com/codex-app-prod/ChatGPT-x64.msix -o (Join-Path $cache ($desktop.sha256+'.msix'))
+curl.exe --fail --location --silent --show-error --max-time 360 $desktop.url -o (Join-Path $cache ($desktop.sha256+'.msix'))
 if($LASTEXITCODE-ne 0){throw 'Desktop download failed'}
 $env:TOKENBOTS_OTA_PROTOCOL='2';$env:TOKENBOTS_OTA_VERSION=[string]$descriptor.version
 & (Join-Path $release 'apply.ps1') -AppDirectory $old

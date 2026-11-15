@@ -15,12 +15,12 @@
 - `integrations/windows-codex/native-menu/component.js`：原生菜单组件，30 秒刷新，展开订阅窗口和重置时间，选择自动 / Plus / Pro。
 - `backend.cjs`：主进程读取本机私有配置，转发用量和号池选择；renderer 不接触 Key。限制来源、路径、重定向及池值。
 - `patch-copy.ps1`：仅修改带定制副本标记的目录；核对版本和原资源 SHA，更新 ASAR 条目与 Windows `INTEGRITY/ELECTRONASAR` 资源中的 header SHA。完整性校验继续启用，不修改系统保护。
-- `install.ps1`：识别 x64 / ARM64，校验固定发行包 SHA，创建独立 UI 数据目录和桌面快捷方式。原应用文件不变，共用用户的 Codex 会话与配置；配置有备份。
+- `install.ps1`：识别 x64 / ARM64，校验固定发行包 SHA，创建独立 UI 数据目录和桌面快捷方式。原应用文件不变；当前实现按接入 Key 隔离 Codex home 和 UI 数据，不读取官方登录授权。旧定制版升级沿用自己的 home，对话和配置有备份。
 - `scripts/build_native_handoff.py`：仅在本机生成包含私有接入配置的 ZIP，保存在 Git 忽略目录 `delivery/`；不可公开上传。
 
 启动文件已修改，**定制副本不再具有有效的官方程序签名，也不是 OpenAI 官方支持版本**。不要关闭 SmartScreen、杀毒或 Windows 保护。升级需重新适配；官方包变化时安装器停止，不能把检测通过视为所有未来版本兼容。回退时退出定制副本、打开原应用；如需恢复线路，使用安装前配置备份。
 
-## 当前发行包证据
+## 历史发行包证据（2026-10-17）
 
 - 来源：[官方 Windows 部署文档](https://learn.chatgpt.com/docs/enterprise/windows-deployment)及其链接的 `https://persistent.oaistatic.com/codex-app-prod/ChatGPT-x64.msix`。
 - 包身份：`OpenAI.Codex`，架构 x64，MSIX 版本 `26.1013.4894.0`。
@@ -61,3 +61,14 @@ python scripts/inspect_windows_release.py .runtime/native-research/ChatGPT-x64.m
 使用情况收起时显示当前套餐与剩余百分比；展开只保留套餐切换、已知窗口余量和进度条。账号编号、采集时间、内部刷新错误及长调试说明不再展示。30 秒自动检查仍在运行；过期数据显示待更新，未提供的窗口不伪装为 100%。
 
 菜单识别所有 TokenBots 开头的提供方名称，修复独立客户名称无法显示定制菜单的问题。模型及强度使用原生选择器；服务器现放行七个用户模型，禁止静默替换。新安装默认 Astra / high，已存在的有效选择保留。更新后完全退出旧定制副本，解压新版安装包运行 install-native.cmd，再打开桌面的 TokenBots Codex，新建对话。
+
+
+## 2026-11-15 官方基础客户端更新
+
+新适配应用版本 `26.1111.21308`，MSIX 版本 `26.1111.2228.0`。包来自官方 Windows 下载地址；固定 SHA、归档完整性、Windows Authenticode 均参与安装核验，已审阅包镜像在 hash 命名的下载路径中，避免官方滚动下载更新后旧安装器失效。具体 x64 / ARM64 哈希见 `integrations/windows-codex/native-menu/desktop-release.json`。
+
+新版采用 Rspack 异步模块，定制菜单在原模块作用域内注入，保留官方插件入口、原有身份分支及其授权判断。不改 TokenBots 登录、provider 或日常模型设置；不伪造 ChatGPT 身份或插件授权。
+
+新基础客户端的真实 Windows x64 UI 验收见 [43724162005](https://github.com/Sgotish/TokenBot/actions/runs/43724162005)，包括启动、用量菜单、模型和推理强度。测试用量来自隔离 fixture，没有发送模型请求。旧版升级在 [43725104602](https://github.com/Sgotish/TokenBot/actions/runs/43725104602) 的迁移步骤通过，随后插件检查脚本发生编码错误；修正后复验结果单独记录，不能把该运行写成全绿。
+
+插件目录是否能打开、GitHub OAuth 是否完成、实际仓库读写是否可用是三个不同结果。API Key 登录不能自动继承官方账号或另一安装中的授权；这些服务器权限不通过修改客户端冒充。ARM64 只核对发行包和模块结构，未做 ARM64 硬件运行验收。
