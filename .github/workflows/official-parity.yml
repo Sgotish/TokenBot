@@ -1,5 +1,8 @@
 name: Windows official base upgrade acceptance
-on: workflow_dispatch
+on:
+  workflow_dispatch:
+  push:
+    branches: [codex/windows-official-parity-20261115]
 jobs:
   desktop-upgrade:
     runs-on: windows-latest
