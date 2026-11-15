@@ -72,3 +72,6 @@ python scripts/inspect_windows_release.py .runtime/native-research/ChatGPT-x64.m
 新基础客户端的真实 Windows x64 UI 验收见 [43724162005](https://github.com/Sgotish/TokenBot/actions/runs/43724162005)，包括启动、用量菜单、模型和推理强度。测试用量来自隔离 fixture，没有发送模型请求。旧版升级在 [43725104602](https://github.com/Sgotish/TokenBot/actions/runs/43725104602) 的迁移步骤通过，随后插件检查脚本发生编码错误；修正后复验结果单独记录，不能把该运行写成全绿。
 
 插件目录是否能打开、GitHub OAuth 是否完成、实际仓库读写是否可用是三个不同结果。API Key 登录不能自动继承官方账号或另一安装中的授权；这些服务器权限不通过修改客户端冒充。ARM64 只核对发行包和模块结构，未做 ARM64 硬件运行验收。
+
+
+本次最终发布和验收结果见 [2026-11-15 升级记录](windows-official-parity-20261115.md)。原生界面最终运行全部通过，GitHub 不在本次 API Key 公共目录中，授权与实际仓库操作仍未验收。
