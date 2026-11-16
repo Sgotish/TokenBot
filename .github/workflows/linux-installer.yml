@@ -1,0 +1,40 @@
+name: Linux desktop installer acceptance
+on:
+  workflow_dispatch:
+  push:
+    branches: [codex/linux-installer-20261116]
+    paths:
+      - integrations/linux-codex/**
+      - scripts/build_linux_installer.py
+      - tests/linux-*.cjs
+      - .github/workflows/linux-installer.yml
+jobs:
+  desktop:
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [ubuntu-24.04, ubuntu-24.04-arm]
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 18
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: npm ci --ignore-scripts && npm run build
+        working-directory: integrations/codex-client
+      - run: python3 scripts/build_linux_installer.py
+      - run: node --test tests/linux-installer.test.cjs
+      - name: Install official package using shipped installer
+        run: bash delivery/linux-2026111601/TokenBots-Linux/install.sh --install-only
+      - name: Native Linux desktop and persistent conversation test
+        run: |
+          sudo apt-get install -y xvfb dbus-x11
+          dbus-run-session -- xvfb-run -a -s '-screen 0 1440x1000x24' node tests/linux-desktop.cjs
+      - name: Save diagnostics without credentials
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-${{ matrix.runner }}
+          path: reports/linux-*
+          if-no-files-found: warn

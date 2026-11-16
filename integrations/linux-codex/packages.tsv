@@ -1,0 +1,6 @@
+deb-amd64	https://persistent.oaistatic.com/codex-app-prod/linux/deb/pool/main/c/chatgpt/chatgpt_26.1111.21308_amd64.deb	4b443bc557350a1b193bc2f1bae207c9ea3c9fb5d94f7c94a5d3dbaa8b552352
+deb-arm64	https://persistent.oaistatic.com/codex-app-prod/linux/deb/pool/main/c/chatgpt/chatgpt_26.1111.21308_arm64.deb	c5c5aa090968ef7a28b27caed3d03374889d7c8250768814eb4cae5d9b9d9a25
+rpm-amd64	https://persistent.oaistatic.com/codex-app-prod/linux/rpm/latest/chatgpt.x86_64.rpm	f13414a31c53c67fc71dead403f5e06d50447aab97688ac72626a3c96c28ab92
+rpm-arm64	https://persistent.oaistatic.com/codex-app-prod/linux/rpm/latest/chatgpt.aarch64.rpm	7c11fee8bcc1ac497795497509735e18f46e359d479cc52555578501c0b24054
+arch-amd64	https://persistent.oaistatic.com/codex-app-prod/linux/install-arch.sh	456af61b377bb5ec5461570efd8765e7dea85e5b11aa25807ba33379ee093f03
+arch-arm64	https://persistent.oaistatic.com/codex-app-prod/linux/install-arch.sh	456af61b377bb5ec5461570efd8765e7dea85e5b11aa25807ba33379ee093f03
