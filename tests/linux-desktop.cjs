@@ -47,6 +47,14 @@ async function close(){
   if(browser){await browser.close();browser=null;}
   if(app){try{process.kill(-app.pid,'SIGTERM');}catch{}await Promise.race([new Promise(r=>app.once('exit',r)),sleep(5000)]);try{process.kill(-app.pid,'SIGKILL');}catch{}}
 }
+async function quitNormally(page){
+  // Use the app's observed Linux Quit accelerator, so its app-server can flush
+  // the rollout before exit. SIGKILL below is cleanup only, not restart testing.
+  const exited=new Promise(resolve=>app.once('exit',resolve));
+  await page.keyboard.press('Control+q');
+  await Promise.race([exited,sleep(20000).then(()=>{if(app.exitCode===null)throw Error('Official Quit did not exit');})]);
+  if(browser){await browser.close().catch(()=>{});browser=null;}
+}
 async function main(){
   await new Promise(r=>server.listen(0,'127.0.0.1',r));
   await linux.configure(key,p,{origin:'http://127.0.0.1:'+server.address().port,localTest:true});
@@ -71,8 +79,9 @@ async function main(){
   await editor.fill('Linux desktop acceptance sentinel. Reply only 42; do not use tools.');
   await editor.press('Enter');
   await page.getByText('Linux install verified: 42',{exact:true}).waitFor({timeout:30000});
+  await page.getByRole('button',{name:'Send',exact:true}).waitFor({timeout:15000});
   await snapshot(page,'desktop-response');
-  await close();
+  await quitNormally(page);
   const authBefore=fs.readFileSync(path.join(p.profile,'auth.json'));
   linux.install(p,path.resolve('delivery/linux-2026111601/TokenBots-Linux'));
   assert(fs.readFileSync(path.join(p.profile,'auth.json')).equals(authBefore));
@@ -95,6 +104,9 @@ async function main(){
   fs.writeFileSync('reports/linux-acceptance.json',JSON.stringify({installer:linux.VERSION,platform:process.platform,architecture:process.arch,officialCli:cp.execFileSync(cli,['--version'],{encoding:'utf8'}).trim(),nativeWindowOpened:true,apiKeyProfile:true,syntheticResponseCompleted:true,nativeChatSubmitted:true,nativeChatRestored:true,reinstallPreservedAuth:true,restartedHistoryRead:true,liveInference:false,customerMachine:false,requests},null,2));
   console.log('PASS native Linux desktop, synthetic response, auth and real thread history after restart/reinstall');
 }
-main().catch(e=>{console.error(e);process.exitCode=1;}).finally(async()=>{
+main().catch(async e=>{
+  console.error(e);process.exitCode=1;
+  if(browser){const page=browser.contexts().flatMap(c=>c.pages())[0];if(page)await snapshot(page,'failure').catch(()=>{});}
+}).finally(async()=>{
   await close();server.close();fs.writeFileSync('reports/linux-process.txt',output.join('').replaceAll(key,'[redacted]'));
 });
