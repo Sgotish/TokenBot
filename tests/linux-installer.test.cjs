@@ -22,7 +22,7 @@ test('reinstall preserves profile, official data, auth and history and handles s
   const entry=fs.readFileSync(path.join(p.applications,'tokenbots-codex.desktop'),'utf8');assert(entry.includes('Exec="'));assert(entry.includes('Terminal=false'));
 });
 test('desktop quoting escapes percent expansions and shell-sensitive paths',()=>{
-  assert.equal(linux.execQuote('/tmp/a %F $x "q"/start'),'"/tmp/a %%F \\$x \\"q\\"/start"');
+  assert.equal(linux.execQuote('/tmp/a %F $x "q"/start'),'"/tmp/a %%F \\\\$x \\\\"q\\\\"/start"');
   assert.throws(()=>linux.execQuote('/tmp/a\nExec=bad'));
 });
 test('real configuration verifies key then writes only isolated profile; invalid key preserves bytes',async t=>{

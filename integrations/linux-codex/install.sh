@@ -14,6 +14,9 @@ if [[ $EUID == 0 ]]; then echo '请以桌面用户运行，不要 sudo bash inst
 for command in curl sha256sum sudo; do
   command -v "$command" >/dev/null || { printf '缺少 %s，请先通过系统软件管理器安装。\n' "$command" >&2; exit 1; }
 done
+(cd "$here" && sha256sum --check --status SHA256SUMS) || {
+  echo '安装器文件不完整，请重新解压整个 ZIP。' >&2; exit 1;
+}
 cache=$(mktemp -d)
 trap 'rm -rf -- "$cache"' EXIT
 record=$(awk -F '\t' -v platform="$platform" '$1==platform {print $2 " " $3}' "$here/packages.tsv")

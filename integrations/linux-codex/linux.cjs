@@ -19,7 +19,8 @@ function atomic(file,content,mode=0o600){
 }
 function execQuote(s){
   if(/[\r\n\0]/.test(s))throw Error('安装路径包含不支持的换行字符。');
-  return '"'+s.replace(/(["`$\\])/g,'\\$1').replace(/%/g,'%%')+'"';
+  // Exec quoting is applied after the Desktop Entry string escape layer.
+  return '"'+s.replace(/(["`$\\])/g,'\\$1').replace(/\\/g,'\\\\').replace(/%/g,'%%')+'"';
 }
 function desktopEntry(launcher,name,action,terminal){
   return `[Desktop Entry]\nType=Application\nName=${name}\nComment=TokenBots Linux desktop\nExec=${execQuote(launcher)} ${action}\nIcon=chatgpt\nTerminal=${terminal}\nCategories=Development;\nStartupNotify=true\n`;

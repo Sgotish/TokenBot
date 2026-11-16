@@ -1,6 +1,6 @@
 'use strict';
 // Actual official Linux app, synthetic loopback provider, no live customer key.
-const fs=require('node:fs'),path=require('node:path'),os=require('node:os'),http=require('node:http'),cp=require('node:child_process'),assert=require('node:assert/strict');
+const fs=require('node:fs'),path=require('node:path'),os=require('node:os'),http=require('node:http'),net=require('node:net'),cp=require('node:child_process'),assert=require('node:assert/strict');
 const {chromium}=require('/usr/lib/chatgpt/resources/cua_node/lib/node_modules/playwright-core');
 const linux=require(path.resolve('delivery/linux-2026111601/TokenBots-Linux/linux.cjs'));
 fs.mkdirSync('reports',{recursive:true});
@@ -23,12 +23,13 @@ const server=http.createServer((req,res)=>{
 let app,browser;const output=[];
 const sleep=ms=>new Promise(r=>setTimeout(r,ms));
 async function open(){
+  const listener=net.createServer();await new Promise(r=>listener.listen(0,'127.0.0.1',r));const port=listener.address().port;await new Promise(r=>listener.close(r));
   const spec=linux.launchSpec(p,{binary:'/usr/lib/chatgpt/ChatGPT'},{localTest:true});
-  app=cp.spawn(spec.command,[...spec.args,'--remote-debugging-port=19331','--force-renderer-accessibility'],{env:spec.env,stdio:['ignore','pipe','pipe']});
+  app=cp.spawn(spec.command,[...spec.args,'--remote-debugging-port='+port,'--force-renderer-accessibility'],{env:spec.env,stdio:['ignore','pipe','pipe'],detached:true});
   app.stdout.on('data',b=>output.push(String(b)));app.stderr.on('data',b=>output.push(String(b)));
   for(let attempt=0;attempt<60;attempt++){
     if(app.exitCode!==null)throw Error('Linux desktop exited '+app.exitCode);
-    try{browser=await chromium.connectOverCDP('http://127.0.0.1:19331');break;}catch{await sleep(500);}
+    try{browser=await chromium.connectOverCDP('http://127.0.0.1:'+port,{timeout:1000});break;}catch{await sleep(500);}
   }
   if(!browser)throw Error('Native app CDP unavailable');
   await sleep(10000);
@@ -40,10 +41,11 @@ async function open(){
 async function snapshot(page,name){
   await page.screenshot({path:'reports/linux-'+name+'.png'});
   fs.writeFileSync('reports/linux-'+name+'.txt',await page.locator('body').innerText());
+  fs.writeFileSync('reports/linux-'+name+'-controls.json',JSON.stringify(await page.locator('input,textarea,[contenteditable=true],button').evaluateAll(nodes=>nodes.map(e=>({tag:e.tagName,role:e.getAttribute('role'),label:e.getAttribute('aria-label'),placeholder:e.getAttribute('placeholder'),text:e.textContent?.slice(0,100)}))),null,2));
 }
 async function close(){
   if(browser){await browser.close();browser=null;}
-  if(app&&app.exitCode===null){app.kill('SIGTERM');await Promise.race([new Promise(r=>app.once('exit',r)),sleep(7000)]);if(app.exitCode===null)app.kill('SIGKILL');}
+  if(app){try{process.kill(-app.pid,'SIGTERM');}catch{}await Promise.race([new Promise(r=>app.once('exit',r)),sleep(5000)]);try{process.kill(-app.pid,'SIGKILL');}catch{}}
 }
 async function main(){
   await new Promise(r=>server.listen(0,'127.0.0.1',r));
@@ -51,12 +53,13 @@ async function main(){
   // Use the app's real CLI to create and persist a synthetic conversation.
   const cli='/usr/lib/chatgpt/resources/codex';
   const args=['exec','--skip-git-repo-check','--sandbox','read-only','-m','gpt-6.1-sol','-c','model_reasoning_effort="low"','--json','Linux installer conversation sentinel. Reply only 42; do not use tools.'];
-  const run=cp.spawn(cli,args,{env:{...process.env,CODEX_HOME:p.profile},stdio:['ignore','pipe','pipe']});let stdout='',stderr='';
+  const run=cp.spawn(cli,args,{env:{...process.env,CODEX_HOME:p.profile},stdio:['ignore','pipe','pipe'],timeout:90000});let stdout='',stderr='';
   run.stdout.on('data',b=>stdout+=b);run.stderr.on('data',b=>stderr+=b);
   const code=await new Promise((r,j)=>{run.on('error',j);run.on('exit',r);});
   assert.equal(code,0,stderr.replaceAll(key,'[redacted]'));assert(stdout.includes('Linux install verified: 42'));
   const events=stdout.trim().split('\n').map(l=>JSON.parse(l));
   const threadId=events.find(e=>e.type==='thread.started')?.thread_id;assert(threadId,'No real persisted thread id');
+  const config=path.join(p.profile,'config.toml');fs.writeFileSync(config,fs.readFileSync(config,'utf8').replace(/^model = .+$/m,'model = "gpt-6.1-sol"').replace(/^model_reasoning_effort = .+$/m,'model_reasoning_effort = "low"'));
   fs.writeFileSync(path.join(p.profile,'.codex-global-state.json'),JSON.stringify({'electron-persisted-atom-state':{'electron:onboarding-projectless-completed':true}}));
   let page=await open();await snapshot(page,'first-start');
   const engineering=page.getByRole('button',{name:'Engineering',exact:true});
@@ -64,11 +67,21 @@ async function main(){
   await snapshot(page,'ready');
   const text=await page.locator('body').innerText();assert(!/Log in to ChatGPT|Sign in to ChatGPT/.test(text),'API key did not reach desktop');
   assert(/New (chat|thread)|Plugins|Skills|Codex/i.test(text),'No recognizable native workspace');
+  const editor=page.locator('[contenteditable=true]').first();
+  await editor.fill('Linux desktop acceptance sentinel. Reply only 42; do not use tools.');
+  await editor.press('Enter');
+  await page.getByText('Linux install verified: 42',{exact:true}).waitFor({timeout:30000});
+  await snapshot(page,'desktop-response');
   await close();
   const authBefore=fs.readFileSync(path.join(p.profile,'auth.json'));
   linux.install(p,path.resolve('delivery/linux-2026111601/TokenBots-Linux'));
   assert(fs.readFileSync(path.join(p.profile,'auth.json')).equals(authBefore));
   page=await open();await snapshot(page,'after-reinstall');
+  if(!((await page.locator('body').innerText()).includes('Linux install verified: 42'))){
+    const recent=page.getByText(/Linux desktop acceptance sentinel/).first();
+    await recent.click();await page.getByText('Linux install verified: 42',{exact:true}).waitFor({timeout:15000});
+  }
+  await snapshot(page,'restored-desktop-chat');
   // Query the official app-server after restart to prove actual persisted data,
   // not just a sentinel text file or an HTTP health check.
   const rpc=cp.spawn(cli,['app-server'],{env:{...process.env,CODEX_HOME:p.profile},stdio:['pipe','pipe','pipe']});rpc.stderr.resume();
@@ -79,7 +92,7 @@ async function main(){
       if(event.id===2){clearTimeout(timer);resolve(event);}
     }});rpc.stdin.write(JSON.stringify({id:1,method:'initialize',params:{clientInfo:{name:'linux-acceptance',version:'1'}}})+'\n');
   });rpc.kill();assert(!result.error,JSON.stringify(result.error));assert(JSON.stringify(result.result).includes('Linux install verified: 42'));
-  fs.writeFileSync('reports/linux-acceptance.json',JSON.stringify({installer:linux.VERSION,platform:process.platform,architecture:process.arch,officialCli:cp.execFileSync(cli,['--version'],{encoding:'utf8'}).trim(),nativeWindowOpened:true,apiKeyProfile:true,syntheticResponseCompleted:true,reinstallPreservedAuth:true,restartedHistoryRead:true,liveInference:false,customerMachine:false,requests},null,2));
+  fs.writeFileSync('reports/linux-acceptance.json',JSON.stringify({installer:linux.VERSION,platform:process.platform,architecture:process.arch,officialCli:cp.execFileSync(cli,['--version'],{encoding:'utf8'}).trim(),nativeWindowOpened:true,apiKeyProfile:true,syntheticResponseCompleted:true,nativeChatSubmitted:true,nativeChatRestored:true,reinstallPreservedAuth:true,restartedHistoryRead:true,liveInference:false,customerMachine:false,requests},null,2));
   console.log('PASS native Linux desktop, synthetic response, auth and real thread history after restart/reinstall');
 }
 main().catch(e=>{console.error(e);process.exitCode=1;}).finally(async()=>{

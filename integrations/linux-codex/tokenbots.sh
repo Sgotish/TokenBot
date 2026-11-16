@@ -24,6 +24,10 @@ elif [[ $action == update ]]; then
     arch-*) sudo pacman -Syu ;;
   esac
   "$node" "$here/linux.cjs" record-update
+  if [[ -t 0 ]]; then read -r -p '按 Enter 关闭 / Press Enter to close. ' unused; fi
+elif [[ $action == usage ]]; then
+  "$node" "$here/linux.cjs" usage "$@"
+  if [[ -t 0 ]]; then read -r -p '按 Enter 关闭 / Press Enter to close. ' unused; fi
 else
   exec "$node" "$here/linux.cjs" "$action" "$@"
 fi
