@@ -93,7 +93,10 @@ async function main(){
   page=await open();await snapshot(page,'after-reinstall');
   if(!((await page.locator('body').innerText()).includes('Linux install verified: 42'))){
     const recent=page.getByText(/Linux desktop acceptance sentinel/).first();
-    await recent.click();await page.getByText('Linux install verified: 42',{exact:true}).waitFor({timeout:15000});
+    // The title overflows under the hover-only pin/archive controls. Its visual
+    // center can hit Pin instead of opening the chat; click the visible text.
+    await recent.click({position:{x:8,y:8}});
+    await page.getByText('Linux install verified: 42',{exact:true}).waitFor({timeout:15000});
   }
   await snapshot(page,'restored-desktop-chat');
   // Query the official app-server after restart to prove actual persisted data,
