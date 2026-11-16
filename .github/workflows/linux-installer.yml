@@ -29,7 +29,7 @@ jobs:
         run: bash delivery/linux-2026111601/TokenBots-Linux/install.sh --install-only
       - name: Native Linux desktop and persistent conversation test
         run: |
-          sudo apt-get install -y xvfb dbus-x11
+          sudo apt-get install -y xvfb dbus-x11 xdotool
           dbus-run-session -- xvfb-run -a -s '-screen 0 1440x1000x24' node tests/linux-desktop.cjs
       - name: Save diagnostics without credentials
         if: always()

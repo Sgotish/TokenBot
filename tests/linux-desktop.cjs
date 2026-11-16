@@ -51,7 +51,12 @@ async function quitNormally(page){
   // Use the app's observed Linux Quit accelerator, so its app-server can flush
   // the rollout before exit. SIGKILL below is cleanup only, not restart testing.
   const exited=new Promise(resolve=>app.once('exit',resolve));
-  await page.keyboard.press('Control+q');
+  // CDP keyboard events do not invoke this app's native menu accelerators.
+  // Deliver Ctrl+Q through the disposable Linux test desktop's X server.
+  const window=cp.execFileSync('xdotool',['search','--onlyvisible','--pid',String(app.pid)],{encoding:'utf8'}).trim().split('\n')[0];
+  assert(window,'No visible native window to quit');
+  cp.execFileSync('xdotool',['windowfocus','--sync',window]);
+  cp.execFileSync('xdotool',['key','--clearmodifiers','ctrl+q']);
   await Promise.race([exited,sleep(20000).then(()=>{if(app.exitCode===null)throw Error('Official Quit did not exit');})]);
   if(browser){await browser.close().catch(()=>{});browser=null;}
 }
