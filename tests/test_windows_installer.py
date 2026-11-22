@@ -104,7 +104,7 @@ Get-TokenBotsPackage -Url '{self.url}/{endpoint}' -Destination (Join-Path $PSScr
         env=dict(os.environ,TOKENBOTS_INSTALL_NO_PAUSE='1')
         # Keep native cmd quoting, including spaces, ampersand, ! and Unicode.
         command=f'"{env["COMSPEC"]}" /d /s /c ""{self.root / "install-native.cmd"}" -ArchivePath "{self.root / "offline file.msix"}""'
-        return subprocess.run(command,cwd=Path(env['SystemRoot'])/'System32',env=env,capture_output=True,timeout=30)
+        return subprocess.run(command,cwd=Path(os.environ['SystemRoot'])/'System32',env=env,capture_output=True,timeout=30)
 
     def test_launcher_resolves_its_own_directory_and_passes_offline_path(self):
         shutil.copyfile(ROOT/'integrations/windows-codex/install-native.cmd',self.root/'install-native.cmd')
