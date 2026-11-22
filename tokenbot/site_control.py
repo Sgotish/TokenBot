@@ -229,12 +229,14 @@ class SiteControl:
             setup=(self.root/'integrations/windows-codex/setup.ps1.template').read_text().replace('__BASE_URL__',access['base_url']).replace('__TEST_KEY__',key).replace('TokenBots Partner Test',access['label'])
             put('setup.ps1',setup.encode('utf-8-sig'))
             for file in (self.root/'integrations/windows-codex/native-menu').iterdir():
-                if file.suffix in ('.ps1','.js','.cjs'): put('native-menu/'+file.name,file.read_bytes())
+                if file.suffix in ('.ps1','.js','.cjs') or file.name=='desktop-release.json': put('native-menu/'+file.name,file.read_bytes())
             put('native-menu/native-access.json',json.dumps({'origin':access['public_origin'],'key':key}))
-            put('install-native.cmd','@echo off\r\ncd /d "%~dp0"\r\npowershell.exe -NoProfile -ExecutionPolicy Bypass -File native-menu\\install.ps1\r\nif errorlevel 1 (echo Installation failed. Keep this window and send the error text without your Key.)\r\npause\r\n')
+            put('install-native.cmd',(self.root/'integrations/windows-codex/install-native.cmd').read_text().replace('\n','\r\n').encode('ascii'))
             put('repair-long-session.cmd','@echo off\r\ncd /d "%~dp0"\r\necho Close TokenBots Codex before continuing. This only repairs its existing configuration.\r\npause\r\npowershell.exe -NoProfile -ExecutionPolicy Bypass -File native-menu\\repair-long-session.ps1\r\nif errorlevel 1 (echo Repair failed. Keep this window; do not send your Key.)\r\npause\r\n')
             put('README.txt',('TokenBots 专属测试接入包\n\n仅给当前账户使用，包含私密 API Key。不要上传公开仓库或转发其他客户。\n'
                 'Windows 原生用量菜单：退出 Codex，完整解压后运行 install-native.cmd，随后从 TokenBots Codex 快捷方式启动。\n'
+                '安装器 2026112101：必须右键 ZIP → 全部解压；不要在压缩包内运行，也不要只把 CMD 拖到桌面。native-menu 文件夹须和 install-native.cmd 同级。\n'
+                '下载约 1 GB，窗口显示下载进度；中断后重开同一安装器会续传。也可用浏览器下载窗口显示的 MSIX，放到 install-native.cmd 旁边，或拖到 CMD 上安装。无需关闭安全软件。\n'
                 '已安装的 Windows 客户：用原有 Key 下载新包，退出 TokenBots 后运行 repair-long-session.cmd，只更新长会话压缩配置，不重装、不换 Key、不移动项目或历史。重开原快捷方式继续使用。\n'
                 'Windows x64 使用已审核且校验签名的固定版本，不再依赖官网滚动版本；无需预装 Node.js。配置与原版隔离，必须使用 TokenBots Codex 快捷方式并新建对话。\n'
                 '同一账户的专属 Key 可以在不同电脑使用，用量按账户汇总；不同用户请各自登录下载，不要共用包。\n'

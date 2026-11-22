@@ -55,21 +55,7 @@ Ultra 由 Codex 客户端执行其工作模式，实际模型请求使用 xhigh�
 配置保存在每把 Key 独立的 TokenBots 目录；不覆盖原来的个人配置。
 本包包含你的接入 Key，只私发给指定搭档，不上传仓库、群聊或公开网盘。
 '''
-launcher = '''@echo off
-cd /d "%~dp0"
-powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File "%~dp0setup.ps1" -CheckOnly
-if errorlevel 1 goto failed
-powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File "%~dp0native-menu\install.ps1"
-if errorlevel 1 goto failed
-echo Ready. Open the TokenBots Codex desktop shortcut.
-pause
-exit /b 0
-:failed
-echo Installation stopped. Original app files and personal Codex configuration are unchanged.
-echo Send us the error text without your Key.
-pause
-exit /b 1
-'''
+launcher = (root / 'integrations/windows-codex/install-native.cmd').read_text()
 folder = root / 'delivery'
 folder.mkdir(mode=0o700, exist_ok=True)
 package = args.output or folder / ('TokenBots-'+client_id+'-Native-Usage.zip' if args.client_config else 'TokenBots-Codex-Native-Usage.zip')
@@ -80,7 +66,7 @@ with zipfile.ZipFile(package, 'w', zipfile.ZIP_DEFLATED) as archive:
     archive.writestr(prefix + 'install-native.cmd', launcher.replace('\n', '\r\n').encode('ascii'))
     archive.writestr(prefix + 'setup.ps1', setup.encode('utf-8-sig'))
     for file in (root / 'integrations/windows-codex/native-menu').iterdir():
-        if file.suffix in ('.ps1', '.js', '.cjs'):
+        if file.suffix in ('.ps1', '.js', '.cjs') or file.name == 'desktop-release.json':
             archive.write(file, prefix + 'native-menu/' + file.name)
     archive.writestr(prefix + 'native-menu/native-access.json', json.dumps({'origin': config['public_origin'], 'key': config['key']}))
     archive.writestr(prefix + 'validation.txt', args.validated_run + '\nWindows UI fixture validation; live cloud bridge tested separately.\n')

@@ -91,7 +91,7 @@ class SiteControlTests(unittest.TestCase):
         source=Path(__file__).resolve().parents[1]
         for rel in ['integrations/codex-client/dist/tokenbots.cjs','integrations/codex-client/node_modules/smol-toml/LICENSE']:
             dest=self.root/rel;dest.parent.mkdir(parents=True,exist_ok=True);dest.write_text('packaging fixture')
-        for rel in ['integrations/windows-codex/setup.ps1.template']:
+        for rel in ['integrations/windows-codex/setup.ps1.template','integrations/windows-codex/install-native.cmd']:
             dest=self.root/rel;dest.parent.mkdir(parents=True,exist_ok=True);shutil.copyfile(source/rel,dest)
         shutil.copytree(source/'integrations/windows-codex/native-menu',self.root/'integrations/windows-codex/native-menu')
         a=self.issue(self.a)
@@ -101,9 +101,14 @@ class SiteControlTests(unittest.TestCase):
             self.assertIn('TokenBots/install-native.cmd',z.namelist())
             self.assertIn('TokenBots/repair-long-session.cmd',z.namelist())
             self.assertIn('TokenBots/native-menu/repair-long-session.ps1',z.namelist())
+            self.assertIn('TokenBots/native-menu/get-package.ps1',z.namelist())
+            release=json.loads(z.read('TokenBots/native-menu/desktop-release.json'))
+            self.assertEqual(release['architectures']['x64']['applicationVersion'],'26.1111.21308')
             self.assertIn('remote_compaction = "v2"',z.read('TokenBots/setup.ps1').decode('utf-8-sig'))
             launch=z.read('TokenBots/install-native.cmd').decode()
             self.assertIn('native-menu\\install.ps1',launch)
+            self.assertIn('-File "%~dp0native-menu\\install.ps1"',launch)
+            self.assertIn('[INCOMPLETE_PACKAGE]',launch)
             self.assertNotIn('-File setup.ps1',launch)  # no pre-install write to the user's default home
             self.assertIn('TokenBots/setup-cli.command',z.namelist())
             self.assertIn('TokenBots/start-cli.command',z.namelist())

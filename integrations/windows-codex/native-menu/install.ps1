@@ -1,39 +1,54 @@
 param([string]$ArchivePath, [switch]$PrepareOnly)
 $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
+$packageRoot = Split-Path -Parent $PSScriptRoot
+$required = @('get-package.ps1','desktop-release.json','patch-copy.ps1','backend.cjs','component.js','enable-images.ps1','tokenbots-images.cjs','enable-ota.ps1','ota-client.cjs')
+foreach ($name in $required) {
+    if (-not (Test-Path -LiteralPath (Join-Path $PSScriptRoot $name) -PathType Leaf)) {
+        throw ('[INCOMPLETE_PACKAGE] Missing native-menu/' + $name + '. Extract ALL files from the ZIP before running install-native.cmd.')
+    }
+}
+if (-not $PrepareOnly) {
+    if (-not (Test-Path -LiteralPath (Join-Path $packageRoot 'setup.ps1') -PathType Leaf) -or
+        -not (Test-Path -LiteralPath (Join-Path $PSScriptRoot 'native-access.json') -PathType Leaf)) {
+        throw '[PRIVATE_CONFIG_MISSING] Extract the repair files into your original TokenBots folder, alongside setup.ps1. Or download a complete private package using your existing Key from tokenbots.top/console. Do not share your Key.'
+    }
+    $config = Get-Content -Raw -LiteralPath (Join-Path $PSScriptRoot 'native-access.json') | ConvertFrom-Json
+    if ($config.testOnlyLocalOrigin -or $config.origin -notmatch '^https://[^/]+/?$' -or -not $config.key) { throw 'Invalid private access configuration.' }
+}
 $architecture = if ($env:PROCESSOR_ARCHITEW6432) { $env:PROCESSOR_ARCHITEW6432 } else { $env:PROCESSOR_ARCHITECTURE }
 if ($architecture -eq 'AMD64') {
     $targetArch = 'x64'
-    $releaseHash = '9af8619e929f00369a47326717f9515205a0e25dd409bc4c29af62c74c1ed898'
 } elseif ($architecture -eq 'ARM64') {
     $targetArch = 'arm64'
-    $releaseHash = 'e9f413125a05f02f4bfde82685d6be64f19f450844b3f0d0339129b1907ccb8f'
 } else { throw 'This build requires Windows x64 or ARM64. No installed app was changed.' }
+$release = (Get-Content -Raw -LiteralPath (Join-Path $PSScriptRoot 'desktop-release.json') | ConvertFrom-Json).architectures.$targetArch
+$releaseHash = $release.sha256
+if ($releaseHash -notmatch '^[a-f0-9]{64}$' -or $release.size -le 0 -or
+    $release.url -ne ('https://pilot.tokenbots.top/downloads/ChatGPT-' + $targetArch + '-' + $releaseHash + '.msix')) { throw 'Invalid desktop release descriptor.' }
 $base = Join-Path $env:LOCALAPPDATA 'TokenBots\Codex-native'
 New-Item -ItemType Directory -Force -Path $base | Out-Null
-$download = Join-Path $base ('ChatGPT-latest-' + $targetArch + '.msix')
+$download = Join-Path $base ('ChatGPT-' + $targetArch + '-' + $releaseHash + '.msix')
+# A package downloaded with a browser can be placed beside install-native.cmd,
+# or passed explicitly: install-native.cmd -ArchivePath "C:\Downloads\package.msix".
+if (-not $ArchivePath) {
+    foreach ($candidate in @((Join-Path $packageRoot ([IO.Path]::GetFileName($download))), (Join-Path $packageRoot ('ChatGPT-' + $targetArch + '.msix')), (Join-Path $base ('ChatGPT-latest-' + $targetArch + '.msix')))) {
+        if ((Test-Path -LiteralPath $candidate -PathType Leaf) -and (Get-Item -LiteralPath $candidate).Length -eq $release.size -and
+            (Get-FileHash -LiteralPath $candidate -Algorithm SHA256).Hash.ToLowerInvariant() -eq $releaseHash) { $ArchivePath = $candidate; break }
+    }
+}
 if (-not $ArchivePath) {
     [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
-    # The vendor's latest URL changes independently of the reviewed adapter.
-    # Retain the byte-identical signed x64 artifact for repeatable clean installs.
-    $url = 'https://pilot.tokenbots.top/downloads/ChatGPT-' + $targetArch + '-' + $releaseHash + '.msix'
-    if ((Test-Path -LiteralPath $download) -and (Get-FileHash -LiteralPath $download -Algorithm SHA256).Hash.ToLowerInvariant() -eq $releaseHash) {
-        Write-Host 'Using cached official desktop package.'
-    } else {
-        Write-Host 'Downloading official desktop package (about 1 GB)...'
-        if (Get-Command curl.exe -ErrorAction SilentlyContinue) {
-            & curl.exe --fail --location --silent --show-error --retry 2 --max-time 900 $url -o $download
-            if ($LASTEXITCODE -ne 0) { throw 'Official package download failed.' }
-        } else { Invoke-WebRequest -UseBasicParsing -Uri $url -OutFile $download }
-    }
-    $ArchivePath = $download
+    . (Join-Path $PSScriptRoot 'get-package.ps1')
+    Write-Host ('Browser/offline download: ' + $release.url)
+    $ArchivePath = Get-TokenBotsPackage -Url $release.url -Destination $download -Sha256 $releaseHash -Size $release.size
 }
-if ((Get-FileHash -LiteralPath $ArchivePath -Algorithm SHA256).Hash.ToLowerInvariant() -ne $releaseHash) {
+if ((Get-Item -LiteralPath $ArchivePath).Length -ne $release.size -or (Get-FileHash -LiteralPath $ArchivePath -Algorithm SHA256).Hash.ToLowerInvariant() -ne $releaseHash) {
     throw 'Official release has changed. Stop here for a new adapter; existing apps are unchanged.'
 }
 $signature = Get-AuthenticodeSignature -LiteralPath $ArchivePath
 if ($signature.Status -ne 'Valid') { throw 'Official package signature validation failed. No installed app was changed.' }
-$destination = Join-Path $base ('c-' + (Get-Date -Format 'yyyyMMdd-HHmmss'))
+$destination = Join-Path $base ('c-' + (Get-Date -Format 'yyyyMMdd-HHmmss') + '-' + [guid]::NewGuid().ToString('N').Substring(0,6))
 if (-not (Get-Command tar.exe -ErrorAction SilentlyContinue)) { throw 'Windows tar.exe is required to extract this release.' }
 New-Item -ItemType Directory -Path $destination | Out-Null
 & tar.exe -xf (Resolve-Path -LiteralPath $ArchivePath).Path -C $destination
