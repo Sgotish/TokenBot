@@ -126,3 +126,24 @@ $effortNames = Save-NativeEvidence 'astra-max-effort'
 if (-not ($effortNames | Where-Object { $_ -match ('^6\.2 Astra .+, ' + $stepCount + ' of ' + $stepCount + '\.$') })) {
   throw 'Native Astra reasoning control did not reach its highest supported level.'
 }
+
+# Keep the upstream long-running task and companion surfaces intact.
+[Windows.Forms.SendKeys]::SendWait('{ESC}{ESC}')
+Start-Sleep -Seconds 2
+if (-not (Invoke-Visible 'Open profile menu')) { throw 'Cannot reopen profile menu for companion check.' }
+Start-Sleep -Seconds 2
+$petMenu = Save-NativeEvidence 'pet-menu'
+if (-not (Invoke-Visible 'Show Pet')) { throw 'Original Show Pet action is missing or disabled.' }
+Start-Sleep -Seconds 4
+$petUi = Save-NativeEvidence 'pet-visible'
+# The real native action must change state to Hide Pet; no replacement widget.
+$null = Invoke-Visible 'Open profile menu'
+Start-Sleep -Seconds 2
+$petState = Save-NativeEvidence 'pet-state'
+if (-not ($petState -contains 'Hide Pet')) { throw 'Show Pet did not enable the original companion.' }
+$null = Invoke-Visible 'Hide Pet'
+Start-Sleep -Seconds 1
+if (-not (Invoke-Visible 'Scheduled')) { throw 'Original Scheduled task manager is unavailable.' }
+Start-Sleep -Seconds 3
+$scheduled = Save-NativeEvidence 'scheduled'
+if (-not ($scheduled | Where-Object { $_ -match 'Create|New task|New scheduled|Schedule' })) { throw 'Scheduled task manager did not render.' }

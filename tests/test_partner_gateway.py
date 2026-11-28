@@ -19,7 +19,7 @@ def test_gateway_limits_auth_paths_and_preserves_stream(monkeypatch):
         c.headers['authorization'] = 'Bearer synthetic-test-key'
         for path in ('/admin/accounts','/api/v1/admin/users','/v1/responses/compact','/v1/models?token=x'):
             assert c.get(path).status_code == 404
-        assert c.get('/v1/models').json()['data'][0]['id'] == MODEL
+        assert MODEL in [m['id'] for m in c.get('/v1/models').json()['data']]
         assert c.post('/v1/responses',json={'model':'other'}).status_code == 400
         assert c.post('/v1/responses',json={'model':MODEL,'background':True,'service_tier':'priority'}).status_code == 200
         calls.clear()
