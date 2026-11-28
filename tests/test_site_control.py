@@ -57,6 +57,19 @@ class SiteControlTests(unittest.TestCase):
             with self.assertRaises(ControlError):
                 self.c.run(action, {'uid': self.a, 'id': a['id']})
 
+    def test_restore_accidentally_disabled_key_keeps_same_identity_and_limit(self):
+        a = self.issue(self.a)
+        self.issue(self.b, 'd'*32)
+        self.c.run('revoke-key', {'uid': self.a, 'id': a['id']})
+        with self.assertRaises(ControlError):
+            self.c.run('enable-key', {'uid': self.b, 'id': a['id']})
+        self.c.run('enable-key', {'uid': self.a, 'id': a['id']})
+        self.assertEqual(a, self.c.run('reveal-key', {'uid': self.a, 'id': a['id']}))
+        self.c.run('revoke-key', {'uid': self.a, 'id': a['id']})
+        for n in range(10): self.issue(self.a, format(n, '032x'))
+        with self.assertRaises(ControlError):
+            self.c.run('enable-key', {'uid': self.a, 'id': a['id']})
+
     def test_per_account_key_limits_do_not_change_other_accounts(self):
         self.issue(self.a)
         self.issue(self.b)

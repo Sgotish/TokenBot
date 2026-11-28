@@ -39,6 +39,7 @@ $release=Join-Path $env:RUNNER_TEMP 'base-release'
 New-Item -ItemType Directory -Path $release | Out-Null
 Copy-Item integrations/windows-codex/native-menu/* $release
 Copy-Item scripts/windows-ota/apply.ps1 $release
+Copy-Item integrations/model-catalog/codex-models.json $release
 node tests/ota-candidate-asset.cjs tests/fixtures/menu-ota-2026110801.json (Join-Path $release 'browser-asset.json')
 if($LASTEXITCODE-ne 0){throw 'Signed browser fixture invalid'}
 $browser=Get-Content -Raw (Join-Path $release 'browser-asset.json')|ConvertFrom-Json

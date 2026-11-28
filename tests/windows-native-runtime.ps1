@@ -133,15 +133,17 @@ Start-Sleep -Seconds 2
 if (-not (Invoke-Visible 'Open profile menu')) { throw 'Cannot reopen profile menu for companion check.' }
 Start-Sleep -Seconds 2
 $petMenu = Save-NativeEvidence 'pet-menu'
-if (-not (Invoke-Visible 'Show Pet')) { throw 'Original Show Pet action is missing or disabled.' }
+$showPet = $petMenu | Where-Object { $_ -match '^Show Pet(?: |$)' } | Select-Object -First 1
+if (-not $showPet -or -not (Invoke-Visible $showPet)) { throw 'Original Show Pet action is missing or disabled.' }
 Start-Sleep -Seconds 4
 $petUi = Save-NativeEvidence 'pet-visible'
 # The real native action must change state to Hide Pet; no replacement widget.
 $null = Invoke-Visible 'Open profile menu'
 Start-Sleep -Seconds 2
 $petState = Save-NativeEvidence 'pet-state'
-if (-not ($petState -contains 'Hide Pet')) { throw 'Show Pet did not enable the original companion.' }
-$null = Invoke-Visible 'Hide Pet'
+$hidePet = $petState | Where-Object { $_ -match '^Hide Pet(?: |$)' } | Select-Object -First 1
+if (-not $hidePet) { throw 'Show Pet did not enable the original companion.' }
+$null = Invoke-Visible $hidePet
 Start-Sleep -Seconds 1
 if (-not (Invoke-Visible 'Scheduled')) { throw 'Original Scheduled task manager is unavailable.' }
 Start-Sleep -Seconds 3

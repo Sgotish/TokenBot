@@ -219,6 +219,17 @@ class SiteControl:
                 if action == 'package-key':
                     return {'zip_base64':base64.b64encode(self.package(cid, value)).decode()}
                 return {'id': kid, 'api_key': value, 'base_url': 'https://pilot.tokenbots.top/v1'}
+            if action == 'enable-key':
+                kid = data.get('id')
+                item = aliases.get(kid) if isinstance(kid, str) else None
+                if not item:
+                    raise ControlError('未找到此账户的密钥。', 404)
+                if not item.get('enabled'):
+                    if sum(v.get('enabled', False) for v in aliases.values()) >= self.key_limits(cfg)['active']:
+                        raise ControlError('启用中的密钥已达账户上限，请联系管理员。', 409)
+                    item['enabled'] = True
+                    self.save(path, registry)
+                return {'ok': True}
             if action == 'revoke-key':
                 kid=data.get('id')
                 if kid not in aliases: raise ControlError('未找到此账户的密钥。',404)
