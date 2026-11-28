@@ -18,6 +18,7 @@ requires_openai_auth = false
 # Model an existing desktop user in this disposable test profile.
 '{"electron-persisted-atom-state":{"electron:onboarding-projectless-completed":true}}' | Set-Content -Encoding ASCII (Join-Path $env:CODEX_HOME '.codex-global-state.json')
 '{"origin":"http://127.0.0.1:18791","key":"fixture-only-not-a-real-key","testOnlyLocalOrigin":true}' | Set-Content -Encoding ASCII (Join-Path $appDir 'resources\tokenbots-native.json')
+& ./integrations/windows-codex/native-menu/enable-models.ps1 -AppDirectory $appDir -ProfileDirectory $env:CODEX_HOME -CatalogPath (Join-Path $PWD 'integrations/model-catalog/codex-models.json')
 $fixture = Start-Process python -ArgumentList 'tests/native_fixture_server.py' -PassThru
 $app = Start-Process (Join-Path $appDir 'ChatGPT.exe') -ArgumentList '--force-renderer-accessibility' -WorkingDirectory $appDir -RedirectStandardOutput (Join-Path $PWD 'reports\native-stdout.txt') -RedirectStandardError (Join-Path $PWD 'reports\native-stderr.txt') -PassThru
 Start-Sleep -Seconds 35
@@ -103,17 +104,17 @@ $picker = Save-NativeEvidence 'model-control'
 if (-not (Invoke-Visible 'Select model')) { throw 'Native model selector unavailable.' }
 Start-Sleep -Seconds 2
 $modelNames = Save-NativeEvidence 'models'
-foreach ($model in @('6.1','Astra','6 Sol','6 Luna','5.6 Sol','Terra','5.6 Luna')) {
+foreach ($model in @('6.2 Sol','6.2 Astra','6.1 Terra','6.1','Astra','6 Sol','6 Luna','5.6 Sol','Terra','5.6 Luna')) {
   if (-not ($modelNames | Where-Object { $_.Replace('-',' ').Contains($model) })) { throw ('Model picker missing ' + $model) }
 }
-$astra = $modelNames | Where-Object { $_ -match 'Astra' } | Select-Object -First 1
+$astra = $modelNames | Where-Object { $_.Replace('-',' ') -match '6.2 Astra' } | Select-Object -First 1
 if (-not (Invoke-Visible $astra)) { throw 'Cannot select Astra from the native menu.' }
 Start-Sleep -Seconds 2
 $astraNames = Save-NativeEvidence 'astra-selected'
 # This client exposes its custom power control by its accessible value name,
 # not UIA RangeValuePattern. The live status describes the selection; the
 # focusable menu item is named Power. Use its documented Left/Right interaction.
-$powerName = $astraNames | Where-Object { $_ -match '^6 Astra .+, 1 of [0-9]+\.$' } | Select-Object -First 1
+$powerName = $astraNames | Where-Object { $_ -match '^6\.2 Astra .+, 1 of [0-9]+\.$' } | Select-Object -First 1
 if (-not $powerName) { throw 'Native Astra power control unavailable.' }
 $stepCount = [int]([regex]::Match($powerName, 'of ([0-9]+)').Groups[1].Value)
 $condition = New-Object Windows.Automation.PropertyCondition([Windows.Automation.AutomationElement]::NameProperty, 'Power')
@@ -122,6 +123,6 @@ $power.SetFocus()
 for ($step=1; $step -lt $stepCount; $step++) { [Windows.Forms.SendKeys]::SendWait('{RIGHT}'); Start-Sleep -Milliseconds 250 }
 Start-Sleep -Seconds 2
 $effortNames = Save-NativeEvidence 'astra-max-effort'
-if (-not ($effortNames | Where-Object { $_ -match ('^6 Astra .+, ' + $stepCount + ' of ' + $stepCount + '\.$') })) {
+if (-not ($effortNames | Where-Object { $_ -match ('^6\.2 Astra .+, ' + $stepCount + ' of ' + $stepCount + '\.$') })) {
   throw 'Native Astra reasoning control did not reach its highest supported level.'
 }

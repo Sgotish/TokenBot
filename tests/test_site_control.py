@@ -43,6 +43,35 @@ class SiteControlTests(unittest.TestCase):
         self.c.run('set-enabled',{'uid':self.b,'enabled':False})
         self.assertIsNone(reg.resolve(key=b['api_key']))
         self.assertIsNotNone(reg.resolve(key=self.main['key']))
+    def test_existing_key_recovery_is_owner_bound_and_refuses_revoked_or_changed_secret(self):
+        a = self.issue(self.a)
+        self.issue(self.b, 'd'*32)
+        self.assertEqual(a, self.c.run('reveal-key', {'uid': self.a, 'id': a['id']}))
+        with self.assertRaises(ControlError):
+            self.c.run('reveal-key', {'uid': self.b, 'id': a['id']})
+        changed = SiteControl(self.root, 'a-different-secret')
+        with self.assertRaises(ControlError):
+            changed.run('reveal-key', {'uid': self.a, 'id': a['id']})
+        self.c.run('revoke-key', {'uid': self.a, 'id': a['id']})
+        for action in ('reveal-key', 'package-key'):
+            with self.assertRaises(ControlError):
+                self.c.run(action, {'uid': self.a, 'id': a['id']})
+
+    def test_per_account_key_limits_do_not_change_other_accounts(self):
+        self.issue(self.a)
+        self.issue(self.b)
+        saved = json.loads(self.reg.read_text())
+        saved['clients']['web-'+self.a]['key_limits'] = {'active': 30, 'total': 100}
+        self.reg.write_text(json.dumps(saved))
+        for n in range(10):
+            self.issue(self.a, format(n, '032x'))
+        for n in range(9):
+            self.issue(self.b, format(n, '032x'))
+        with self.assertRaises(ControlError):
+            self.issue(self.b, format(10, '032x'))
+        self.assertEqual(self.c.run('status', {'uid': self.a})['key_limits'], {'active': 30, 'total': 100})
+        self.assertEqual(self.c.run('status', {'uid': self.b})['key_limits'], {'active': 10, 'total': 30})
+
     def test_auth_and_bad_input(self):
         with TestClient(create_app(self.c)) as client:
             self.assertEqual(client.post('/internal/site/status',json={'uid':self.a}).status_code,401)
@@ -91,12 +120,14 @@ class SiteControlTests(unittest.TestCase):
         source=Path(__file__).resolve().parents[1]
         for rel in ['integrations/codex-client/dist/tokenbots.cjs','integrations/codex-client/node_modules/smol-toml/LICENSE']:
             dest=self.root/rel;dest.parent.mkdir(parents=True,exist_ok=True);dest.write_text('packaging fixture')
-        for rel in ['integrations/windows-codex/setup.ps1.template','integrations/windows-codex/install-native.cmd']:
+        for rel in ['integrations/windows-codex/setup.ps1.template','integrations/windows-codex/install-native.cmd','integrations/model-catalog/codex-models.json']:
             dest=self.root/rel;dest.parent.mkdir(parents=True,exist_ok=True);shutil.copyfile(source/rel,dest)
         shutil.copytree(source/'integrations/windows-codex/native-menu',self.root/'integrations/windows-codex/native-menu')
         a=self.issue(self.a)
         with zipfile.ZipFile(io.BytesIO(self.c.package('web-'+self.a,a['api_key']))) as z:
             self.assertIsNone(z.testzip())
+            catalog = json.loads(z.read('TokenBots/native-menu/codex-models.json'))
+            self.assertIn('gpt-6.2-astra', [m['slug'] for m in catalog['models']])
             self.assertEqual(json.loads(z.read('TokenBots/access.json'))['key'],a['api_key'])
             self.assertIn('TokenBots/install-native.cmd',z.namelist())
             self.assertIn('TokenBots/repair-long-session.cmd',z.namelist())

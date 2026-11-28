@@ -62,6 +62,7 @@ package = args.output or folder / ('TokenBots-'+client_id+'-Native-Usage.zip' if
 package.parent.mkdir(mode=0o700,parents=True,exist_ok=True)
 with zipfile.ZipFile(package, 'w', zipfile.ZIP_DEFLATED) as archive:
     prefix = 'TokenBots-Codex-Native-Usage/'
+    archive.write(root/'integrations/model-catalog/codex-models.json',prefix+'native-menu/codex-models.json')
     archive.writestr(prefix + 'README.txt', readme.encode('utf-8-sig'))
     archive.writestr(prefix + 'install-native.cmd', launcher.replace('\n', '\r\n').encode('ascii'))
     archive.writestr(prefix + 'setup.ps1', setup.encode('utf-8-sig'))

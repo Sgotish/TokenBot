@@ -2,7 +2,7 @@ name: Windows installer repair acceptance
 on:
   workflow_dispatch:
   push:
-    branches: [codex/windows-installer-repair-20261121]
+    branches: [codex/windows-installer-repair-20261121, codex/client-compat-20261127]
 jobs:
   installer:
     runs-on: windows-latest

@@ -1,5 +1,8 @@
 """Explicit user-facing Codex models; never silently map one model to another."""
 MODEL_EFFORTS = {
+    'gpt-6.2-sol': ('low', 'medium', 'high', 'xhigh', 'max', 'ultra'),
+    'gpt-6.2-astra': ('low', 'medium', 'high', 'xhigh', 'max', 'ultra'),
+    'gpt-6.1-terra': ('low', 'medium', 'high', 'xhigh', 'max', 'ultra'),
     'gpt-6.1-sol': ('low', 'medium', 'high', 'xhigh', 'max', 'ultra'),
     'gpt-6-astra': ('low', 'medium', 'high', 'xhigh', 'max', 'ultra'),
     'gpt-6-sol': ('low', 'medium', 'high', 'xhigh', 'max', 'ultra'),

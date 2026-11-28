@@ -21,6 +21,10 @@ NATIVE = dict(zip(FIELDS, ('input_price', 'output_price', 'cache_read_price', 'c
 REFERENCE_CNY_PER_USD = Decimal('6.6702')
 DEFAULT_MULTIPLIER = '0.3335'
 BASE = {
+    # OpenAI Standard short-context reference, verified 2026-11-28.
+    'gpt-6.2-sol': ('2', '10', '.1', '2.5'),
+    'gpt-6.2-astra': ('8', '40', '.4', '10'),
+    'gpt-6.1-terra': ('1', '5', '.05', '1.25'),
     'gpt-6.1-sol': ('2', '10', '.1', '2.5'),
     'gpt-6-astra': ('10', '50', '1', '12.5'),
     'gpt-6-sol': ('2', '10', '.2', '2.5'),
@@ -109,11 +113,11 @@ class PriceBook:
                       reference_discount_zhe=money((amount(active['multiplier']) / REFERENCE_CNY_PER_USD * 10).quantize(Decimal('0.01')).normalize()),
                       context_note='当前各上下文统一单价', service_tiers=['standard'],
                       source='https://apinebula.ai/zh/pricing',
-                      source_checked_at='2026-10-24', models=[])
+                      source_checked_at='2026-11-28', models=[])
         for row in active['models']:
             result['models'].append({'id': row['id'], 'provider': 'OpenAI', 'family': 'GPT',
                 'reference_source': ('https://developers.openai.com/api/docs/pricing'
-                                     if row['id'] in ('gpt-6-luna', 'gpt-5.6-terra', 'gpt-5.6-luna')
+                                     if row['id'] in ('gpt-6.2-sol', 'gpt-6.2-astra', 'gpt-6.1-terra', 'gpt-6-luna', 'gpt-5.6-terra', 'gpt-5.6-luna')
                                      else 'https://apinebula.ai/zh/pricing'),
                 'base': row['base'], 'prices': {k: money(amount(v)*amount(active['multiplier'])) for k, v in row['base'].items()}})
         if admin:

@@ -131,9 +131,22 @@ class ClientRegistry:
                 if state is None:
                     state = self.states[cid] = PoolState(cfg)
                 elif state.config != cfg:
-                    if state.active or state.pending:
+                    # Authentication was checked against the fresh registry above.
+                    # Creating/revoking a different alias must not invalidate an
+                    # already queued request or reset the customer's active count.
+                    metadata = {'aliases', 'key', 'enabled', 'expires_at', 'label',
+                                'credit_reservations', 'key_limits'}
+                    operational = lambda value: {k: v for k, v in value.items() if k not in metadata}
+                    if operational(state.config) == operational(cfg):
+                        state.config = cfg
+                    elif state.active or state.pending:
                         return None
-                    state = self.states[cid] = PoolState(cfg)
+                    else:
+                        # Keep identity stable for a waiter that just acquired its
+                        # slot; replacing the object caused a second spurious 401.
+                        refreshed = PoolState(cfg)
+                        state.config, state.pools = cfg, refreshed.pools
+                        state.path, state.selected = refreshed.path, refreshed.selected
                 return cid, state
         except (OSError, ValueError, KeyError, TypeError, AttributeError):
             return None

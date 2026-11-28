@@ -8,9 +8,9 @@ function TokenBotsNativeUsage() {
     try {
       const response = await fetch('app://-/tokenbots-native/usage', {cache: 'no-store'});
       const data = await response.json();
-      if (!response.ok) throw new Error();
+      if (!response.ok) throw new Error(data.code === 'access_key_rejected' ? 'Key 已失效，请修复登录' : '暂不可用');
       setStatus(data); setError('');
-    } catch { setStatus(null); setError('暂不可用'); }
+    } catch (e) { setStatus(null); setError(e.message === 'Key 已失效，请修复登录' ? e.message : '暂不可用'); }
   };
   ma.useEffect(() => {
     let live = true;
@@ -18,9 +18,9 @@ function TokenBotsNativeUsage() {
       try {
         const response = await fetch('app://-/tokenbots-native/usage', {cache: 'no-store'});
         const data = await response.json();
-        if (!response.ok) throw new Error();
+        if (!response.ok) throw new Error(data.code === 'access_key_rejected' ? 'Key 已失效，请修复登录' : '暂不可用');
         if (live) { setStatus(data); setError(''); }
-      } catch { if (live) { setStatus(null); setError('暂不可用'); } }
+      } catch (e) { if (live) { setStatus(null); setError(e.message === 'Key 已失效，请修复登录' ? e.message : '暂不可用'); } }
     };
     refresh();
     const timer = setInterval(refresh, 30000);
@@ -62,6 +62,8 @@ function TokenBotsNativeUsage() {
       style: {padding: '8px 12px', minWidth: 220, fontSize: 12, lineHeight: 1.6},
       onClick: e => e.stopPropagation(),
       children: [
+        error ? $.jsx('div', {role: 'alert', children: error === 'Key 已失效，请修复登录'
+          ? '请打开 tokenbots.top/console，核对本机使用的 Key 是否仍启用。不要删除项目或聊天记录。' : error}) : null,
         $.jsx('div', {style: {display: 'flex', gap: 6, marginBottom: 8}, children: ['auto', 'plus', 'pro'].map(pool => $.jsx('button', {
           type: 'button', disabled: busy || !!status?.active_requests, 'aria-pressed': status?.selected_pool === pool,
           style: {padding: '3px 8px', border: '1px solid currentColor', borderRadius: 6, opacity: status?.selected_pool === pool ? 1 : 0.65},

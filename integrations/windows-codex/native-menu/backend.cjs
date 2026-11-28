@@ -52,7 +52,10 @@ async function handle(request) {
       method, redirect: 'error', signal: AbortSignal.timeout(10000),
       headers: {Authorization: 'Bearer ' + config.key, Origin: target.origin, 'Content-Type': 'application/json'}, body,
     });
-    if (!upstream.ok) return reply({error: upstream.status === 409 ? '仍有调用进行中，请结束任务后再切换' : '用量服务暂不可用，请稍后重试'}, upstream.status);
+    if (!upstream.ok) return reply({error: upstream.status === 401
+      ? '当前 Key 已失效或停用。请在官网控制台核对该 Key，使用有效接入配置修复登录。'
+      : upstream.status === 409 ? '仍有调用进行中，请结束任务后再切换' : '用量服务暂不可用，请稍后重试',
+      code: upstream.status === 401 ? 'access_key_rejected' : 'usage_unavailable'}, upstream.status);
     return reply(await upstream.json());
   } catch {
     return reply({error: '无法读取用量，请检查网络或接入配置'}, 503);

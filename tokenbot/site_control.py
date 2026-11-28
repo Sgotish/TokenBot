@@ -77,12 +77,18 @@ class SiteControl:
             f.flush(); os.fsync(f.fileno())
         temp.replace(path)
 
+    @staticmethod
+    def key_limits(cfg):
+        saved = cfg.get('key_limits', {})
+        return {name: saved.get(name, default) for name, default in (('active', 10), ('total', 30))}
+
     def public(self, cfg):
         state = PoolState(cfg).status()
         return {**state, 'enabled': cfg.get('enabled', True),
             'pricing_mode':'trial_budget' if cfg.get('billing', {}).get('mode') == 'trial_budget' else 'paid' if cfg.get('billing', {}).get('status') == 'active' else 'test',
             'billing': {k:v for k,v in cfg.get('billing', {}).items() if k in ('status','mode','currency','multiplier','activated_at')},
             'reserved_credit': self.reserved_credit(cfg),
+            'key_limits': self.key_limits(cfg),
             'base_url':'https://pilot.tokenbots.top/v1', 'models':discovery()['data'],
             'image_capabilities':image_capabilities(),
             'keys':[{k:v for k,v in item.items() if k != 'digest'} | {'id':kid}
@@ -189,14 +195,30 @@ class SiteControl:
                         self.billing.activate(cid, cfg, lambda: self.save(path, registry), registry['pricing_multiplier'])
                 value = 'sk-tb-'+hmac.new(self.secret.encode(), ('key:'+uid+':'+kid).encode(), hashlib.sha256).hexdigest()
                 if kid not in aliases:
-                    if len(aliases)>=30 or sum(x['enabled'] for x in aliases.values())>=10:
-                        raise ControlError('测试密钥数量已达上限，请先停用不需要的密钥。',409)
+                    limits = self.key_limits(cfg)
+                    if len(aliases) >= limits['total']:
+                        raise ControlError('密钥创建数量已达账户上限，请联系管理员调整额度。', 409)
+                    if sum(x['enabled'] for x in aliases.values()) >= limits['active']:
+                        raise ControlError('启用中的密钥已达账户上限，请停用不需要的密钥或联系管理员。', 409)
                     aliases[kid] = {'digest':hashlib.sha256(value.encode()).hexdigest(), 'label':label,
                                     'suffix':value[-6:],'enabled':True,'created':int(time.time())}
                     self.save(path,registry)
                 elif not aliases[kid]['enabled']:
                     raise ControlError('此创建请求对应的密钥已停用，请重新创建。',409)
                 return {'id':kid,'api_key':value,'base_url':'https://pilot.tokenbots.top/v1'}
+            if action in ('reveal-key', 'package-key'):
+                kid = data.get('id')
+                item = aliases.get(kid) if isinstance(kid, str) else None
+                if not item:
+                    raise ControlError('未找到此账户的密钥。', 404)
+                if item.get('enabled') is not True:
+                    raise ControlError('此密钥已停用，请选择启用中的密钥或创建新密钥。', 409)
+                value = 'sk-tb-'+hmac.new(self.secret.encode(), ('key:'+uid+':'+kid).encode(), hashlib.sha256).hexdigest()
+                if not hmac.compare_digest(hashlib.sha256(value.encode()).hexdigest(), item.get('digest', '')):
+                    raise ControlError('此历史密钥无法恢复，请创建新密钥。', 409)
+                if action == 'package-key':
+                    return {'zip_base64':base64.b64encode(self.package(cid, value)).decode()}
+                return {'id': kid, 'api_key': value, 'base_url': 'https://pilot.tokenbots.top/v1'}
             if action == 'revoke-key':
                 kid=data.get('id')
                 if kid not in aliases: raise ControlError('未找到此账户的密钥。',404)
@@ -220,6 +242,7 @@ class SiteControl:
                 z.writestr(info,value)
             put('access.json',json.dumps(access))
             put('tokenbots.cjs',(self.root/'integrations/codex-client/dist/tokenbots.cjs').read_bytes())
+            put('native-menu/codex-models.json',(self.root/'integrations/model-catalog/codex-models.json').read_bytes())
             put('THIRD-PARTY-LICENSE.txt',(self.root/'integrations/codex-client/node_modules/smol-toml/LICENSE').read_bytes())
             for target in ('desktop','cli'):
                 put('setup-'+target+'.cmd','@echo off\r\ncd /d "%~dp0"\r\nnode tokenbots.cjs setup --target '+target+' --access access.json\r\npause\r\n')
@@ -235,7 +258,7 @@ class SiteControl:
             put('repair-long-session.cmd','@echo off\r\ncd /d "%~dp0"\r\necho Close TokenBots Codex before continuing. This only repairs its existing configuration.\r\npause\r\npowershell.exe -NoProfile -ExecutionPolicy Bypass -File native-menu\\repair-long-session.ps1\r\nif errorlevel 1 (echo Repair failed. Keep this window; do not send your Key.)\r\npause\r\n')
             put('README.txt',('TokenBots 专属测试接入包\n\n仅给当前账户使用，包含私密 API Key。不要上传公开仓库或转发其他客户。\n'
                 'Windows 原生用量菜单：退出 Codex，完整解压后运行 install-native.cmd，随后从 TokenBots Codex 快捷方式启动。\n'
-                '安装器 2026112101：必须右键 ZIP → 全部解压；不要在压缩包内运行，也不要只把 CMD 拖到桌面。native-menu 文件夹须和 install-native.cmd 同级。\n'
+                '安装器 2026112701：必须右键 ZIP → 全部解压；不要在压缩包内运行，也不要只把 CMD 拖到桌面。native-menu 文件夹须和 install-native.cmd 同级。\n'
                 '下载约 1 GB，窗口显示下载进度；中断后重开同一安装器会续传。也可用浏览器下载窗口显示的 MSIX，放到 install-native.cmd 旁边，或拖到 CMD 上安装。无需关闭安全软件。\n'
                 '已安装的 Windows 客户：用原有 Key 下载新包，退出 TokenBots 后运行 repair-long-session.cmd，只更新长会话压缩配置，不重装、不换 Key、不移动项目或历史。重开原快捷方式继续使用。\n'
                 'Windows x64 使用已审核且校验签名的固定版本，不再依赖官网滚动版本；无需预装 Node.js。配置与原版隔离，必须使用 TokenBots Codex 快捷方式并新建对话。\n'
@@ -243,7 +266,7 @@ class SiteControl:
                 'Mac / Linux / Windows CLI：先安装 Node.js 20+ 和官方 Codex；运行对应 setup-desktop 或 setup-cli。Linux 可执行 sh setup-cli.command。\n'
                 'CLI 配置后请运行 start-cli.cmd（Windows）或 sh start-cli.command（Mac/Linux），这样才会使用专用配置目录；直接运行普通 codex 保持原配置。\n'
                 'WSL 请在 WSL 内单独配置，不与 Windows 共用配置目录。\n'
-                '新配置默认 Astra/high，已有有效选择保留。七个模型共用同一把 Key；在 Codex 内选择模型和支持的强度，无需网站选渠道。\n'
+                '新配置默认 Astra/high，已有有效选择保留。包含 GPT-6.2 Sol / Astra 和 GPT-6.1 Terra，全部模型共用同一把 Key；在 Codex 内选择模型和支持的强度，无需网站选渠道。\n'
                 '跨平台回退：node tokenbots.cjs rollback --target cli（桌面配置将 cli 改为 desktop）；自定义目录需另加 --home。Windows 定制副本回退请退出后打开原版应用。\n'
                 'Windows 定制副本并非官方发行版；原版保留。Mac/Linux 此包仅配置接入，未添加原生用量菜单。\n'
                 '计费状态、倍率、余额与逐笔账单以网站账户页面为准；免费测试历史不追扣。上游订阅容量仍有限。需要停用 Key 时在网站操作。\n').encode('utf-8-sig'))

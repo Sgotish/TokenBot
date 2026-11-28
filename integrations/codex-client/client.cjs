@@ -5,6 +5,7 @@ const crypto=require('node:crypto'), cp=require('node:child_process');
 const {parse,stringify}=require('smol-toml');
 const PROVIDER='tokenbots_cross_platform';
 const CATALOG=require('../model-catalog/models.json').models;
+const CODEX_CATALOG=require('../model-catalog/codex-models.json');
 const hash=v=>crypto.createHash('sha256').update(v??'<absent>').digest('hex');
 const read=p=>fs.existsSync(p)?fs.readFileSync(p,'utf8'):null;
 function write(file,value){
@@ -63,8 +64,12 @@ async function configure({home,access,target,localTest=false}){
   if(profile && (typeof profile!=='string'||profile==='..'||/[\\/]/.test(profile)))throw Error('Invalid profile filename. Nothing changed.');
   const activeProfile=profile?read(path.join(home,profile+'.config.toml')):undefined;
   let next=mergeConfig(before,access,target,activeProfile);
+  const catalogContent=JSON.stringify(CODEX_CATALOG);
+  const catalogPath=path.join(home,'.tokenbots-tools','models-'+hash(catalogContent).slice(0,16)+'.json');
+  const catalogConfig=parse(next);catalogConfig.model_catalog_json=catalogPath;next=stringify(catalogConfig);
   const models=await(await request(access,'/v1/models')).json();
   if(!models.data?.some(m=>m.id===parse(next).model))throw Error('Model unavailable. Nothing changed.');
+  if(read(catalogPath)!==catalogContent)write(catalogPath,catalogContent);
   if(access.public_origin==='https://pilot.tokenbots.top'){
     const name='tokenbots-images.cjs';
     const source=[path.join(__dirname,'native-menu',name),path.join(__dirname,'../windows-codex/native-menu',name)].find(fs.existsSync);

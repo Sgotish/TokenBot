@@ -6,11 +6,11 @@ from pathlib import Path
 import zipfile
 
 ROOT=Path(__file__).resolve().parents[1]
-VERSION='2026112101'
+VERSION='2026112701'
 
 def build(output):
     source=ROOT/'integrations/windows-codex'
-    readme='''TokenBots Windows 安装修复 2026112101
+    readme='''TokenBots Windows 安装修复 2026112701
 
 此包不含账号、密码或 API Key。用于修复原专属安装包，不能单独完成账号配置。
 1. 先关闭报错的安装窗口，不删除已安装的应用或对话。
@@ -21,7 +21,7 @@ def build(output):
 原包找不到时：登录 https://tokenbots.top/console，用原来的 Key 重新下载专属配置包，完整解压后运行。
 不要创建新 Key 来替代旧 Key；安装器用原来的 Key 识别已有配置和对话目录。
 
-本次修复绝对路径、缺文件提示、旧版官网发包和慢速下载。基础应用仍为已适配的 26.1111.21308。
+本次包含 6.2 模型菜单和明确的 Key 失效提示，并保留绝对路径、缺文件提示和断点续传修复。基础应用仍为已适配的 26.1111.21308。
 下载约 1 GB；显示进度，连接中断会续传，再次运行也继续已保存的进度。
 旧安装器的不同版本残缺文件不能拼接到新版包，首次使用新版需要下载匹配的基础包。
 网速慢也可用浏览器或下载管理器下载控制台显示的 MSIX 地址，把文件放到 install-native.cmd 旁边再运行，或拖到 install-native.cmd 上。
@@ -30,6 +30,7 @@ def build(output):
 '''
     output.parent.mkdir(parents=True,exist_ok=True)
     with zipfile.ZipFile(output,'w',zipfile.ZIP_DEFLATED) as z:
+        z.write(ROOT/'integrations/model-catalog/codex-models.json','TokenBots/native-menu/codex-models.json')
         z.writestr('TokenBots/安装说明.txt',readme.encode('utf-8-sig'))
         z.writestr('TokenBots/install-native.cmd',(source/'install-native.cmd').read_text().replace('\n','\r\n').encode('ascii'))
         for p in sorted((source/'native-menu').iterdir()):

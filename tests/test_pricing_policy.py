@@ -19,6 +19,9 @@ class ReferencePricingTests(unittest.TestCase):
         self.assertEqual(projection['multiplier'], '0.3335')
         self.assertEqual(projection['reference_discount_zhe'], '0.5')
         expected = {
+            'gpt-6.2-sol': ('2', '10', '.1', '2.5'),
+            'gpt-6.2-astra': ('8', '40', '.4', '10'),
+            'gpt-6.1-terra': ('1', '5', '.05', '1.25'),
             'gpt-6.1-sol': ('2', '10', '.1', '2.5'),
             'gpt-6-astra': ('10', '50', '1', '12.5'),
             'gpt-6-sol': ('2', '10', '.2', '2.5'),
