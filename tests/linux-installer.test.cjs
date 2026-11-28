@@ -1,7 +1,7 @@
 'use strict';
 const {test}=require('node:test'),assert=require('node:assert/strict');
 const fs=require('node:fs'),path=require('node:path'),os=require('node:os'),cp=require('node:child_process'),http=require('node:http');
-const source=path.resolve('delivery/linux-2026111601/TokenBots-Linux');
+const source=path.resolve('delivery/linux-2026112801/TokenBots-Linux');
 const linux=require(path.join(source,'linux.cjs'));
 function temp(t){const home=fs.mkdtempSync(path.join(os.tmpdir(),'TB Linux space 中文-'));t.after(()=>fs.rmSync(home,{recursive:true,force:true}));return home;}
 test('one installer selects each supported distro/CPU and rejects unknown systems before writes',()=>{

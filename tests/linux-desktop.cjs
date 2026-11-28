@@ -2,7 +2,7 @@
 // Actual official Linux app, synthetic loopback provider, no live customer key.
 const fs=require('node:fs'),path=require('node:path'),os=require('node:os'),http=require('node:http'),net=require('node:net'),cp=require('node:child_process'),assert=require('node:assert/strict');
 const {chromium}=require('/usr/lib/chatgpt/resources/cua_node/lib/node_modules/playwright-core');
-const linux=require(path.resolve('delivery/linux-2026111601/TokenBots-Linux/linux.cjs'));
+const linux=require(path.resolve('delivery/linux-2026112801/TokenBots-Linux/linux.cjs'));
 fs.mkdirSync('reports',{recursive:true});
 const p=linux.paths(),key='fixture_only_no_real_account_123456',requests=[];
 const server=http.createServer((req,res)=>{
@@ -88,7 +88,7 @@ async function main(){
   await snapshot(page,'desktop-response');
   await quitNormally(page);
   const authBefore=fs.readFileSync(path.join(p.profile,'auth.json'));
-  linux.install(p,path.resolve('delivery/linux-2026111601/TokenBots-Linux'));
+  linux.install(p,path.resolve('delivery/linux-2026112801/TokenBots-Linux'));
   assert(fs.readFileSync(path.join(p.profile,'auth.json')).equals(authBefore));
   page=await open();await snapshot(page,'after-reinstall');
   if(!((await page.locator('body').innerText()).includes('Linux install verified: 42'))){
