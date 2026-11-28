@@ -2,7 +2,7 @@
 'use strict';
 const fs=require('node:fs'),path=require('node:path'),os=require('node:os'),cp=require('node:child_process'),crypto=require('node:crypto');
 const client=require('./tokenbots.cjs');
-const VERSION='2026111601';
+const VERSION='2026112801';
 function paths(env=process.env,home=os.homedir()) {
   const base=path.resolve(env.XDG_DATA_HOME||path.join(home,'.local/share'),'tokenbots-codex-linux');
   return {base,profile:path.join(base,'profile'),ui:path.join(base,'desktop'),applications:path.resolve(env.XDG_DATA_HOME||path.join(home,'.local/share'),'applications')};

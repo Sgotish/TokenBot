@@ -2,7 +2,7 @@ name: Linux desktop installer acceptance
 on:
   workflow_dispatch:
   push:
-    branches: [codex/linux-installer-20261116]
+    branches: [codex/linux-installer-20261116, codex/client-compat-20261127]
     paths:
       - integrations/linux-codex/**
       - scripts/build_linux_installer.py
@@ -26,7 +26,7 @@ jobs:
       - run: python3 scripts/build_linux_installer.py
       - run: node --test tests/linux-installer.test.cjs
       - name: Install official package using shipped installer
-        run: bash delivery/linux-2026111601/TokenBots-Linux/install.sh --install-only
+        run: bash delivery/linux-2026112801/TokenBots-Linux/install.sh --install-only
       - name: Native Linux desktop and persistent conversation test
         run: |
           sudo apt-get install -y xvfb dbus-x11 xdotool

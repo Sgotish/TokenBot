@@ -1,4 +1,4 @@
-TokenBots Codex Linux — 2026111601
+TokenBots Codex Linux — 2026112801
 
 这是联网安装包，不用自行区分 x64 和 ARM64。
 支持官方 Linux 桌面预览版支持的 Ubuntu 24.04/26.04、Debian 13、Fedora 43/44。
