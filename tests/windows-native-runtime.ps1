@@ -138,10 +138,19 @@ if (-not $showPet -or -not (Invoke-Visible $showPet)) { throw 'Original Show Pet
 Start-Sleep -Seconds 4
 $petUi = Save-NativeEvidence 'pet-visible'
 # The real native action must change state to Hide Pet; no replacement widget.
-$null = Invoke-Visible 'Open profile menu'
-Start-Sleep -Seconds 2
-$petState = Save-NativeEvidence 'pet-state'
-$hidePet = $petState | Where-Object { $_ -match '^Hide Pet(?: |$)' } | Select-Object -First 1
+$hidePet = $null
+# The companion opens another renderer and can temporarily move focus while
+# first-run Windows setup finishes. Wait for the real menu state instead of
+# treating one missing accessibility snapshot as a failed toggle.
+for ($attempt=0; $attempt -lt 20 -and -not $hidePet; $attempt++) {
+    $petState = Save-NativeEvidence 'pet-state'
+    $hidePet = $petState | Where-Object { $_ -match '^Hide Pet(?: |$)' } | Select-Object -First 1
+    if ($hidePet) { break }
+    if (-not ($petState | Where-Object { $_ -match '^Show Pet(?: |$)' })) {
+        $null = Invoke-Visible 'Open profile menu'
+    }
+    Start-Sleep -Seconds 3
+}
 if (-not $hidePet) { throw 'Show Pet did not enable the original companion.' }
 $null = Invoke-Visible $hidePet
 Start-Sleep -Seconds 1
